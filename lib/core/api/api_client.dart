@@ -1,7 +1,6 @@
 import 'package:dio/dio.dart';
-
-import 'api_endpoints.dart';
-import 'dio_interceptor.dart';
+import 'package:invoice/core/api/api_endpoints.dart';
+import 'package:invoice/core/api/dio_interceptor.dart';
 
 class ApiClient {
   ApiClient._();
@@ -11,48 +10,54 @@ class ApiClient {
   late final Dio dio = Dio(
     BaseOptions(
       baseUrl: ApiEndpoints.baseUrl,
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 30),
-      sendTimeout: const Duration(seconds: 30),
+      connectTimeout: const Duration(seconds: 60),
+      receiveTimeout: const Duration(seconds: 60),
+      sendTimeout: const Duration(seconds: 60),
       responseType: ResponseType.json,
     ),
   )..interceptors.add(DioInterceptor());
 
-  Future<Response> get(
+  Future<T> get<T>(
     String path, {
     Map<String, dynamic>? queryParameters,
+    required T Function(Map<String, dynamic> json) parser,
   }) async {
-    return await dio.get(
-      path,
-      queryParameters: queryParameters,
-    );
+    final response = await dio.get(path, queryParameters: queryParameters);
+
+    return parser(response.data as Map<String, dynamic>);
   }
 
-  Future<Response> post(
+  Future<T> post<T>(
     String path, {
     dynamic data,
     Map<String, dynamic>? queryParameters,
+    required T Function(Map<String, dynamic> json) parser,
   }) async {
-    return await dio.post(
+    final response = await dio.post(
       path,
       data: data,
       queryParameters: queryParameters,
     );
+
+    return parser(response.data as Map<String, dynamic>);
   }
 
-  Future<Response> put(
+  Future<T> put<T>(
     String path, {
     dynamic data,
+    required T Function(Map<String, dynamic> json) parser,
   }) async {
-    return await dio.put(
-      path,
-      data: data,
-    );
+    final response = await dio.put(path, data: data);
+
+    return parser(response.data as Map<String, dynamic>);
   }
 
-  Future<Response> delete(
-    String path,
-  ) async {
-    return await dio.delete(path);
+  Future<T> delete<T>(
+    String path, {
+    required T Function(Map<String, dynamic> json) parser,
+  }) async {
+    final response = await dio.delete(path);
+
+    return parser(response.data as Map<String, dynamic>);
   }
 }

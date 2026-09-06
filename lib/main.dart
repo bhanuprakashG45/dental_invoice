@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:invoice/provider/providers.dart';
+import 'package:provider/provider.dart';
 import 'package:invoice/views/auth/sign_in_screen.dart';
 import 'core/theme/app_theme.dart';
 
@@ -12,11 +14,17 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Dental Invoice',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      home: const SignInScreen(),
+    return MultiProvider(
+      providers: allProviders,
+      child: MaterialApp(
+        title: 'Dental Invoice',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+        home: const SignInScreen(),
+        builder: (context, child) {
+          return SafeArea(top: false, child: child ?? const SizedBox.shrink());
+        },
+      ),
     );
   }
 }
