@@ -4,8 +4,8 @@ class ApiEndpoints {
   static const String baseUrl = "https://dentalinvoice-backend-1.onrender.com";
   //Auth
   static const login = "/api/auth/v1/login";
-  static const dashboard = "dashboard";
-  static const products = "products";
+  //Products
+  static const products = "/api/products/v1";
   // Inventory
   static const inventory = "inventory";
   //Invoices

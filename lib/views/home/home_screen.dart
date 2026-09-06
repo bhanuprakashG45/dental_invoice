@@ -733,30 +733,30 @@ class _InvoiceHistoryCard extends StatelessWidget {
   }
 }
 
-class _CreateInvoiceButton extends StatelessWidget {
-  const _CreateInvoiceButton();
+// class _CreateInvoiceButton extends StatelessWidget {
+//   const _CreateInvoiceButton();
 
-  @override
-  Widget build(BuildContext context) {
-    return FloatingActionButton.extended(
-      onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const CreateInvoiceScreen()),
-        );
-      },
-      backgroundColor: AppColors.primary,
-      foregroundColor: AppColors.white,
-      elevation: 8,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      icon: const Icon(Icons.add_rounded, size: 22),
-      label: Text(
-        'Create Invoice',
-        style: AppTextStyles.button.copyWith(
-          fontWeight: FontWeight.w700,
-          fontSize: context.sp(13),
-        ),
-      ),
-    );
-  }
-}
+//   @override
+//   Widget build(BuildContext context) {
+//     return FloatingActionButton.extended(
+//       onPressed: () {
+//         Navigator.push(
+//           context,
+//           MaterialPageRoute(builder: (_) => const CreateInvoiceScreen()),
+//         );
+//       },
+//       backgroundColor: AppColors.primary,
+//       foregroundColor: AppColors.white,
+//       elevation: 8,
+//       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+//       icon: const Icon(Icons.add_rounded, size: 22),
+//       label: Text(
+//         'Create Invoice',
+//         style: AppTextStyles.button.copyWith(
+//           fontWeight: FontWeight.w700,
+//           fontSize: context.sp(13),
+//         ),
+//       ),
+//     );
+//   }
+// }

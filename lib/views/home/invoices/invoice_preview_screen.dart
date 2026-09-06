@@ -1,16 +1,603 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:invoice/core/constants/app_colors.dart';
 import 'package:invoice/core/constants/app_responsive.dart';
 import 'package:invoice/core/theme/app_textstyles.dart';
+import 'package:invoice/data/models/home/invoice/create_invoice_model.dart';
+import 'package:invoice/provider/home/invoice/invoice_provider.dart';
+import 'package:provider/provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
-class InvoicePreviewScreen extends StatelessWidget {
+class InvoicePreviewScreen extends StatefulWidget {
   final Map<String, dynamic> invoice;
 
   const InvoicePreviewScreen({super.key, required this.invoice});
 
-  // ---------------------------------------------------------------------------
-  // HELPERS
-  // ---------------------------------------------------------------------------
+  @override
+  State<InvoicePreviewScreen> createState() => _InvoicePreviewScreenState();
+}
+
+class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
+  // ===========================================================================
+  // PRINT FLOW
+  // ===========================================================================
+
+  Future<void> _printInvoice() async {
+    final provider = context.read<InvoiceProvider>();
+
+    if (provider.isLoading) {
+      return;
+    }
+
+    final invoiceModel = InvoiceModel.fromPreviewMap(widget.invoice);
+
+    final savedInvoice = await provider.createInvoice(invoiceModel);
+
+    if (!mounted) {
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // API FAILED
+    // Invoice is already saved locally by the provider.
+    // -------------------------------------------------------------------------
+    if (savedInvoice == null) {
+      _showSnackBar(
+        'Invoice saved locally, but server sync failed.',
+        isError: true,
+      );
+
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // API SUCCESS
+    // Now generate and print the invoice.
+    // -------------------------------------------------------------------------
+    _showSnackBar('Invoice created successfully.', isError: false);
+
+    await _generateAndPrintInvoice(savedInvoice);
+  }
+
+  // ===========================================================================
+  // PDF GENERATION + PRINTING
+  // ===========================================================================
+
+  Future<void> _generateAndPrintInvoice(InvoiceModel invoice) async {
+    try {
+      final regularFont = pw.Font.ttf(
+        await rootBundle.load('assets/fonts/Inter-Regular.ttf'),
+      );
+
+      final boldFont = pw.Font.ttf(
+        await rootBundle.load('assets/fonts/Inter-Bold.ttf'),
+      );
+
+      final pdf = pw.Document(
+        theme: pw.ThemeData.withFont(base: regularFont, bold: boldFont),
+      );
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(32),
+          build: (context) {
+            return [
+              // -----------------------------------------------------------------
+              // BUSINESS HEADER
+              // -----------------------------------------------------------------
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          invoice.companyName.isEmpty
+                              ? 'Business Name'
+                              : invoice.companyName,
+                          style: pw.TextStyle(
+                            fontSize: 22,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+
+                        if (invoice.companyAddress.isNotEmpty)
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.only(top: 5),
+                            child: pw.Text(
+                              invoice.companyAddress,
+                              style: const pw.TextStyle(
+                                fontSize: 10,
+                                color: PdfColors.grey700,
+                              ),
+                            ),
+                          ),
+
+                        if (invoice.companyPhone.isNotEmpty ||
+                            invoice.companyEmail.isNotEmpty)
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.only(top: 6),
+                            child: pw.Text(
+                              [
+                                if (invoice.companyPhone.isNotEmpty)
+                                  invoice.companyPhone,
+                                if (invoice.companyEmail.isNotEmpty)
+                                  invoice.companyEmail,
+                              ].join('  |  '),
+                              style: const pw.TextStyle(
+                                fontSize: 9,
+                                color: PdfColors.grey700,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(10),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(color: PdfColors.grey300),
+                      borderRadius: pw.BorderRadius.circular(8),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      children: [
+                        pw.Text(
+                          'TAX INVOICE',
+                          style: pw.TextStyle(
+                            fontSize: 16,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 5),
+                        pw.Text(
+                          'Invoice No: ${invoice.invoiceNo}',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                        pw.Text(
+                          'Date: ${_formatInvoiceDate(invoice.invoiceDate)}',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                        if (invoice.financialYear.isNotEmpty)
+                          pw.Text(
+                            'FY: ${invoice.financialYear}',
+                            style: const pw.TextStyle(fontSize: 9),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              pw.SizedBox(height: 18),
+
+              pw.Divider(color: PdfColors.grey300),
+
+              pw.SizedBox(height: 12),
+
+              // -----------------------------------------------------------------
+              // SELLER DETAILS
+              // -----------------------------------------------------------------
+              pw.Text(
+                'Seller Details',
+                style: pw.TextStyle(
+                  fontSize: 12,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+
+              pw.SizedBox(height: 7),
+
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.grey100,
+                  border: pw.Border.all(color: PdfColors.grey300),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      invoice.companyName,
+                      style: pw.TextStyle(
+                        fontSize: 11,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+
+                    if (invoice.companyAddress.isNotEmpty)
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.only(top: 4),
+                        child: pw.Text(
+                          invoice.companyAddress,
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                      ),
+
+                    if (invoice.companyGstin.isNotEmpty)
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.only(top: 4),
+                        child: pw.Text(
+                          'GSTIN: ${invoice.companyGstin}',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                      ),
+
+                    if (invoice.companyDlNo.isNotEmpty)
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.only(top: 3),
+                        child: pw.Text(
+                          'DL No.: ${invoice.companyDlNo}',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              pw.SizedBox(height: 14),
+
+              // -----------------------------------------------------------------
+              // BILL TO
+              // -----------------------------------------------------------------
+              pw.Text(
+                'Bill To',
+                style: pw.TextStyle(
+                  fontSize: 12,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+
+              pw.SizedBox(height: 7),
+
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.grey100,
+                  border: pw.Border.all(color: PdfColors.grey300),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      invoice.customerName,
+                      style: pw.TextStyle(
+                        fontSize: 11,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+
+                    if (invoice.customerAddress.isNotEmpty)
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.only(top: 4),
+                        child: pw.Text(
+                          invoice.customerAddress,
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                      ),
+
+                    if (invoice.customerPhone.isNotEmpty)
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.only(top: 3),
+                        child: pw.Text(
+                          'Phone: ${invoice.customerPhone}',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                      ),
+
+                    if (invoice.customerEmail.isNotEmpty)
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.only(top: 3),
+                        child: pw.Text(
+                          'Email: ${invoice.customerEmail}',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                      ),
+
+                    if (invoice.customerGstin.isNotEmpty)
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.only(top: 3),
+                        child: pw.Text(
+                          'GSTIN: ${invoice.customerGstin}',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              pw.SizedBox(height: 18),
+
+              // -----------------------------------------------------------------
+              // INVOICE DETAILS
+              // -----------------------------------------------------------------
+              pw.Table(
+                border: pw.TableBorder.all(color: PdfColors.grey300),
+                columnWidths: const {
+                  0: pw.FlexColumnWidth(1),
+                  1: pw.FlexColumnWidth(1),
+                  2: pw.FlexColumnWidth(1),
+                  3: pw.FlexColumnWidth(1),
+                },
+                children: [
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(
+                      color: PdfColors.grey100,
+                    ),
+                    children: [
+                      _pdfHeaderCell('Dispatched Through'),
+                      _pdfHeaderCell('Reference'),
+                      _pdfHeaderCell('Salesperson'),
+                      _pdfHeaderCell('Payment Status'),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: [
+                      _pdfValueCell(invoice.dispatchedThrough),
+                      _pdfValueCell(invoice.reference),
+                      _pdfValueCell(invoice.salesperson),
+                      _pdfValueCell(invoice.paymentStatus.toUpperCase()),
+                    ],
+                  ),
+                ],
+              ),
+
+              pw.SizedBox(height: 18),
+
+              // -----------------------------------------------------------------
+              // ITEMS
+              // -----------------------------------------------------------------
+              pw.Text(
+                'Items & Services',
+                style: pw.TextStyle(
+                  fontSize: 12,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+
+              pw.SizedBox(height: 7),
+
+              pw.TableHelper.fromTextArray(
+                border: pw.TableBorder.all(color: PdfColors.grey300),
+                headerDecoration: const pw.BoxDecoration(
+                  color: PdfColors.grey200,
+                ),
+                headerStyle: pw.TextStyle(
+                  fontSize: 8,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+                cellStyle: const pw.TextStyle(fontSize: 8),
+                cellPadding: const pw.EdgeInsets.symmetric(
+                  horizontal: 5,
+                  vertical: 6,
+                ),
+                headers: const [
+                  'S.No',
+                  'Product / Service',
+                  'HSN',
+                  'GST',
+                  'Qty',
+                  'Rate',
+                  'Amount',
+                ],
+                data: List.generate(invoice.items.length, (index) {
+                  final item = invoice.items[index];
+
+                  return [
+                    '${index + 1}',
+                    item.service,
+                    item.hsnCode,
+                    '${_number(item.gst).toStringAsFixed(0)}%',
+                    _quantity(item.quantity),
+                    _money(item.rate),
+                    _money(item.amount),
+                  ];
+                }),
+              ),
+
+              pw.SizedBox(height: 18),
+
+              // -----------------------------------------------------------------
+              // TOTALS
+              // -----------------------------------------------------------------
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(child: pw.Container()),
+
+                  pw.SizedBox(width: 20),
+
+                  pw.SizedBox(
+                    width: 230,
+                    child: pw.Column(
+                      children: [
+                        _pdfAmountRow('Sub Total', _money(invoice.subtotal)),
+                        _pdfAmountRow('SGST', _money(invoice.sgst)),
+                        _pdfAmountRow('CGST', _money(invoice.cgst)),
+                        _pdfAmountRow('Round Off', _money(invoice.roundOff)),
+
+                        pw.Divider(color: PdfColors.grey400),
+
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.symmetric(vertical: 7),
+                          child: pw.Row(
+                            mainAxisAlignment:
+                                pw.MainAxisAlignment.spaceBetween,
+                            children: [
+                              pw.Text(
+                                'Grand Total',
+                                style: pw.TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              ),
+                              pw.Text(
+                                _money(invoice.totalAmount),
+                                style: pw.TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              // -----------------------------------------------------------------
+              // BANK DETAILS
+              // -----------------------------------------------------------------
+              if (_hasBankDetailsForModel(invoice)) ...[
+                pw.SizedBox(height: 18),
+
+                pw.Text(
+                  'Bank Details',
+                  style: pw.TextStyle(
+                    fontSize: 12,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+
+                pw.SizedBox(height: 7),
+
+                pw.Container(
+                  width: double.infinity,
+                  padding: const pw.EdgeInsets.all(10),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.grey100,
+                    border: pw.Border.all(color: PdfColors.grey300),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      if (invoice.bankName.isNotEmpty)
+                        pw.Text(
+                          'Bank: ${invoice.bankName}',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                      if (invoice.accountNumber.isNotEmpty)
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.only(top: 3),
+                          child: pw.Text(
+                            'A/C No.: ${invoice.accountNumber}',
+                            style: const pw.TextStyle(fontSize: 9),
+                          ),
+                        ),
+                      if (invoice.ifscCode.isNotEmpty)
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.only(top: 3),
+                          child: pw.Text(
+                            'IFSC: ${invoice.ifscCode}',
+                            style: const pw.TextStyle(fontSize: 9),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+
+              pw.SizedBox(height: 35),
+
+              // -----------------------------------------------------------------
+              // SIGNATURE
+              // -----------------------------------------------------------------
+              pw.Align(
+                alignment: pw.Alignment.centerRight,
+                child: pw.SizedBox(
+                  width: 160,
+                  child: pw.Column(
+                    children: [
+                      pw.SizedBox(height: 35),
+                      pw.Divider(color: PdfColors.grey800),
+                      pw.Text(
+                        'Authorized Signature',
+                        style: const pw.TextStyle(
+                          fontSize: 9,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ];
+          },
+        ),
+      );
+
+      // -----------------------------------------------------------------------
+      // OPEN SYSTEM PRINT DIALOG
+      // -----------------------------------------------------------------------
+      await Printing.layoutPdf(
+        onLayout: (format) async {
+          return pdf.save();
+        },
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      _showSnackBar(
+        'Unable to print invoice. Please try again.',
+        isError: true,
+      );
+    }
+  }
+
+  // ===========================================================================
+  // PDF HELPERS
+  // ===========================================================================
+
+  pw.Widget _pdfHeaderCell(String text) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.all(6),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+      ),
+    );
+  }
+
+  pw.Widget _pdfValueCell(String text) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.all(6),
+      child: pw.Text(
+        text.isEmpty ? '-' : text,
+        style: const pw.TextStyle(fontSize: 8),
+      ),
+    );
+  }
+
+  pw.Widget _pdfAmountRow(String title, String amount) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 4),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(title, style: const pw.TextStyle(fontSize: 9)),
+          pw.Text(
+            amount,
+            style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // FORMATTERS
+  // ===========================================================================
 
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/'
@@ -18,68 +605,109 @@ class InvoicePreviewScreen extends StatelessWidget {
         '${date.year}';
   }
 
+  String _formatInvoiceDate(String value) {
+    if (value.isEmpty) {
+      return '-';
+    }
+
+    try {
+      final date = DateTime.parse(value);
+      return _formatDate(date);
+    } catch (_) {
+      return value;
+    }
+  }
+
   String _money(dynamic value) {
-    final amount = value is num ? value.toDouble() : 0.0;
+    final amount = _number(value);
     return '₹${amount.toStringAsFixed(2)}';
   }
 
   String _safeString(dynamic value) {
-    if (value == null) return '';
-    return value.toString();
+    if (value == null) {
+      return '';
+    }
+
+    return value.toString().trim();
   }
 
   double _number(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(
+          value?.toString().replaceAll(',', '').trim() ?? '',
+        ) ??
+        0;
   }
 
-  // ---------------------------------------------------------------------------
+  String _quantity(dynamic value) {
+    final quantity = _number(value);
+
+    if (quantity % 1 == 0) {
+      return quantity.toStringAsFixed(0);
+    }
+
+    return quantity.toStringAsFixed(2);
+  }
+
+  // ===========================================================================
   // BUILD
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   @override
   Widget build(BuildContext context) {
     final items =
-        (invoice['items'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        (widget.invoice['items'] as List?)
+            ?.map((item) => Map<String, dynamic>.from(item as Map))
+            .toList() ??
+        [];
 
-    final date = invoice['date'] is DateTime
-        ? invoice['date'] as DateTime
-        : DateTime.now();
+    final date = _getInvoiceDate();
 
-    final subtotal = _number(invoice['subtotal']);
-    final sgst = _number(invoice['sgst']);
-    final cgst = _number(invoice['cgst']);
-    final roundOff = _number(invoice['roundOff']);
-    final total = _number(invoice['total']);
+    final subtotal = _number(widget.invoice['subtotal']);
+    final sgst = _number(widget.invoice['sgst']);
+    final cgst = _number(widget.invoice['cgst']);
 
-    final paymentStatus = _safeString(invoice['paymentStatus']).isEmpty
+    final totalGst = widget.invoice['totalGst'] != null
+        ? _number(widget.invoice['totalGst'])
+        : sgst + cgst;
+
+    final roundOff = _number(widget.invoice['roundOff']);
+
+    final total = widget.invoice['total'] != null
+        ? _number(widget.invoice['total'])
+        : subtotal + totalGst + roundOff;
+
+    final paymentStatus = _safeString(widget.invoice['paymentStatus']).isEmpty
         ? 'Pending'
-        : _safeString(invoice['paymentStatus']);
+        : _safeString(widget.invoice['paymentStatus']);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6F8),
+      backgroundColor: const Color(0xFFF3F4F6),
 
-      // -----------------------------------------------------------------------
+      // =========================================================================
       // APP BAR
-      // -----------------------------------------------------------------------
+      // =========================================================================
       appBar: AppBar(
-        elevation: 0,
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
+        elevation: 0,
         centerTitle: false,
         titleSpacing: context.wp(4),
         title: Text(
           'Invoice Preview',
           style: AppTextStyles.titleLarge.copyWith(
+            color: const Color(0xFF101828),
             fontWeight: FontWeight.w800,
-            color: const Color(0xFF16181D),
           ),
         ),
       ),
 
-      // -----------------------------------------------------------------------
+      // =========================================================================
       // BODY
-      // -----------------------------------------------------------------------
+      // =========================================================================
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
@@ -91,366 +719,22 @@ class InvoicePreviewScreen extends StatelessWidget {
           ),
           child: Column(
             children: [
-              // =================================================================
-              // INVOICE PAPER
-              // =================================================================
-              Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
-                      blurRadius: 24,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: Column(
-                    children: [
-                      // =========================================================
-                      // TOP ACCENT
-                      // =========================================================
-                      Container(
-                        height: 5,
-                        width: double.infinity,
-                        color: AppColors.primary,
-                      ),
-
-                      // =========================================================
-                      // BUSINESS HEADER
-                      // =========================================================
-                      Padding(
-                        padding: EdgeInsets.all(context.wp(5)),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildBusinessLogo(context),
-
-                            SizedBox(width: context.wp(3.5)),
-
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _safeString(invoice['sellerName']).isEmpty
-                                        ? 'Business Name'
-                                        : _safeString(invoice['sellerName']),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppTextStyles.titleLarge.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      color: AppColors.primary,
-                                    ),
-                                  ),
-
-                                  if (_safeString(
-                                    invoice['sellerAddress'],
-                                  ).isNotEmpty) ...[
-                                    SizedBox(height: context.hp(0.7)),
-                                    Text(
-                                      _safeString(invoice['sellerAddress']),
-                                      style: AppTextStyles.bodySmall.copyWith(
-                                        color: const Color(0xFF667085),
-                                        height: 1.4,
-                                      ),
-                                    ),
-                                  ],
-
-                                  if (_safeString(
-                                    invoice['sellerPhone'],
-                                  ).isNotEmpty) ...[
-                                    SizedBox(height: context.hp(0.5)),
-                                    _contactRow(
-                                      Icons.phone_outlined,
-                                      _safeString(invoice['sellerPhone']),
-                                    ),
-                                  ],
-
-                                  if (_safeString(
-                                    invoice['sellerEmail'],
-                                  ).isNotEmpty) ...[
-                                    SizedBox(height: context.hp(0.4)),
-                                    _contactRow(
-                                      Icons.email_outlined,
-                                      _safeString(invoice['sellerEmail']),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      _sectionDivider(),
-
-                      // =========================================================
-                      // INVOICE TITLE
-                      // =========================================================
-                      Padding(
-                        padding: EdgeInsets.all(context.wp(5)),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'TAX INVOICE',
-                                    style: AppTextStyles.headlineLarge.copyWith(
-                                      fontWeight: FontWeight.w900,
-                                      color: const Color(0xFF16181D),
-                                      letterSpacing: 0.3,
-                                    ),
-                                  ),
-                                  SizedBox(height: context.hp(0.5)),
-                                  Text(
-                                    'Original for recipient',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: const Color(0xFF98A2B3),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            SizedBox(width: context.wp(3)),
-
-                            _buildInvoiceMeta(
-                              context,
-                              invoiceNumber: _safeString(
-                                invoice['invoiceNumber'],
-                              ),
-                              date: _formatDate(date),
-                              financialYear: _safeString(
-                                invoice['financialYear'],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      _sectionDivider(),
-
-                      // =========================================================
-                      // SELLER / GST DETAILS
-                      // =========================================================
-                      if (_hasBusinessDetails()) ...[
-                        Padding(
-                          padding: EdgeInsets.all(context.wp(5)),
-                          child: _buildDetailsCard(
-                            context,
-                            title: 'Invoice Details',
-                            icon: Icons.receipt_long_outlined,
-                            children: [
-                              if (_safeString(
-                                invoice['sellerGstin'],
-                              ).isNotEmpty)
-                                _detailItem(
-                                  'GSTIN',
-                                  _safeString(invoice['sellerGstin']),
-                                ),
-                              if (_safeString(
-                                invoice['sellerLicense'],
-                              ).isNotEmpty)
-                                _detailItem(
-                                  'DL No.',
-                                  _safeString(invoice['sellerLicense']),
-                                ),
-                              if (_safeString(
-                                invoice['dispatchedThrough'],
-                              ).isNotEmpty)
-                                _detailItem(
-                                  'Dispatched Through',
-                                  _safeString(invoice['dispatchedThrough']),
-                                ),
-                              if (_safeString(invoice['reference']).isNotEmpty)
-                                _detailItem(
-                                  'Reference',
-                                  _safeString(invoice['reference']),
-                                ),
-                              if (_safeString(
-                                invoice['salesPerson'],
-                              ).isNotEmpty)
-                                _detailItem(
-                                  'Salesperson',
-                                  _safeString(invoice['salesPerson']),
-                                ),
-                            ],
-                          ),
-                        ),
-
-                        _sectionDivider(),
-                      ],
-
-                      // =========================================================
-                      // BILL TO
-                      // =========================================================
-                      Padding(
-                        padding: EdgeInsets.all(context.wp(5)),
-                        child: _buildCustomerCard(context),
-                      ),
-
-                      _sectionDivider(),
-
-                      // =========================================================
-                      // ITEMS
-                      // =========================================================
-                      Padding(
-                        padding: EdgeInsets.all(context.wp(5)),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _sectionTitle(
-                              context,
-                              icon: Icons.shopping_bag_outlined,
-                              title: 'Items & Services',
-                              subtitle:
-                                  '${items.length} ${items.length == 1 ? 'item' : 'items'}',
-                            ),
-
-                            SizedBox(height: context.hp(1.8)),
-
-                            _buildItemsTable(context, items),
-                          ],
-                        ),
-                      ),
-
-                      _sectionDivider(),
-
-                      // =========================================================
-                      // TOTALS + BANK
-                      // =========================================================
-                      Padding(
-                        padding: EdgeInsets.all(context.wp(5)),
-                        child: Column(
-                          children: [
-                            _buildTotalsSection(
-                              context,
-                              subtotal: subtotal,
-                              sgst: sgst,
-                              cgst: cgst,
-                              roundOff: roundOff,
-                              total: total,
-                            ),
-
-                            if (_hasBankDetails()) ...[
-                              SizedBox(height: context.hp(2.5)),
-                              _buildBankDetails(context),
-                            ],
-                          ],
-                        ),
-                      ),
-
-                      _sectionDivider(),
-
-                      // =========================================================
-                      // PAYMENT STATUS
-                      // =========================================================
-                      Padding(
-                        padding: EdgeInsets.all(context.wp(5)),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Payment Status',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: const Color(0xFF98A2B3),
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  SizedBox(height: context.hp(0.5)),
-                                  Text(
-                                    paymentStatus,
-                                    style: AppTextStyles.titleMedium.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      color: const Color(0xFF16181D),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            _buildPaymentBadge(context, paymentStatus),
-                          ],
-                        ),
-                      ),
-
-                      _sectionDivider(),
-
-                      // =========================================================
-                      // SIGNATURE
-                      // =========================================================
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          context.wp(5),
-                          context.hp(3),
-                          context.wp(5),
-                          context.hp(4),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Column(
-                              children: [
-                                SizedBox(
-                                  width: context.wp(32),
-                                  height: context.hp(5),
-                                ),
-                                Container(
-                                  width: context.wp(36),
-                                  height: 1,
-                                  color: const Color(0xFF344054),
-                                ),
-                                SizedBox(height: context.hp(0.7)),
-                                Text(
-                                  'Authorized Signature',
-                                  style: AppTextStyles.bodySmall.copyWith(
-                                    color: const Color(0xFF667085),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              _buildInvoicePaper(
+                context,
+                items: items,
+                date: date,
+                subtotal: subtotal,
+                sgst: sgst,
+                cgst: cgst,
+                totalGst: totalGst,
+                roundOff: roundOff,
+                total: total,
+                paymentStatus: paymentStatus,
               ),
 
-              // =================================================================
-              // ACTION BUTTONS
-              // =================================================================
               SizedBox(height: context.hp(2.5)),
 
-              _buildPrintButton(
-                context,
-                icon: Icons.print_outlined,
-                title: 'Print Invoice',
-                onPressed: () {
-                  // TODO: Generate PDF and print
-                },
-              ),
-
-              SizedBox(height: context.hp(1.2)),
-
-              _buildBluetoothButton(
-                context,
-                onPressed: () {
-                  // TODO: Bluetooth printing
-                },
-              ),
+              _buildActionButtons(context),
             ],
           ),
         ),
@@ -458,9 +742,169 @@ class InvoicePreviewScreen extends StatelessWidget {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // BUSINESS LOGO
-  // ---------------------------------------------------------------------------
+  DateTime _getInvoiceDate() {
+    final value = widget.invoice['date'];
+
+    if (value is DateTime) {
+      return value;
+    }
+
+    if (value is String && value.trim().isNotEmpty) {
+      try {
+        return DateTime.parse(value);
+      } catch (_) {}
+    }
+
+    return DateTime.now();
+  }
+
+  // ===========================================================================
+  // INVOICE PAPER
+  // ===========================================================================
+
+  Widget _buildInvoicePaper(
+    BuildContext context, {
+    required List<Map<String, dynamic>> items,
+    required DateTime date,
+    required double subtotal,
+    required double sgst,
+    required double cgst,
+    required double totalGst,
+    required double roundOff,
+    required double total,
+    required String paymentStatus,
+  }) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE4E7EC)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.055),
+            blurRadius: 28,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Column(
+          children: [
+            Container(
+              height: 5,
+              width: double.infinity,
+              color: AppColors.primary,
+            ),
+
+            _buildBusinessHeader(context),
+
+            _divider(),
+
+            _buildInvoiceHeader(context, date: date),
+
+            _divider(),
+
+            _buildPartyAndInvoiceDetails(context),
+
+            _divider(),
+
+            _buildItemsSection(context, items),
+
+            _divider(),
+
+            _buildTotalsAndBankSection(
+              context,
+              subtotal: subtotal,
+              sgst: sgst,
+              cgst: cgst,
+              totalGst: totalGst,
+              roundOff: roundOff,
+              total: total,
+            ),
+
+            _divider(),
+
+            _buildPaymentStatus(context, paymentStatus),
+
+            _divider(),
+
+            _buildSignatureSection(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // BUSINESS HEADER
+  // ===========================================================================
+
+  Widget _buildBusinessHeader(BuildContext context) {
+    final sellerName = _safeString(widget.invoice['sellerName']);
+
+    final sellerAddress = _safeString(widget.invoice['sellerAddress']);
+
+    final sellerPhone = _safeString(widget.invoice['sellerPhone']);
+
+    final sellerEmail = _safeString(widget.invoice['sellerEmail']);
+
+    return Padding(
+      padding: EdgeInsets.all(context.wp(5)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildBusinessLogo(context),
+
+          SizedBox(width: context.wp(3.5)),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  sellerName.isEmpty ? 'Business Name' : sellerName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.titleLarge.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+
+                if (sellerAddress.isNotEmpty) ...[
+                  SizedBox(height: context.hp(0.7)),
+                  Text(
+                    sellerAddress,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: const Color(0xFF667085),
+                      height: 1.45,
+                    ),
+                  ),
+                ],
+
+                if (sellerPhone.isNotEmpty || sellerEmail.isNotEmpty) ...[
+                  SizedBox(height: context.hp(1)),
+
+                  Wrap(
+                    spacing: context.wp(4),
+                    runSpacing: context.hp(0.6),
+                    children: [
+                      if (sellerPhone.isNotEmpty)
+                        _contactRow(Icons.phone_outlined, sellerPhone),
+                      if (sellerEmail.isNotEmpty)
+                        _contactRow(Icons.email_outlined, sellerEmail),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildBusinessLogo(BuildContext context) {
     return Container(
@@ -486,9 +930,59 @@ class InvoicePreviewScreen extends StatelessWidget {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // INVOICE META
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // INVOICE HEADER
+  // ===========================================================================
+
+  Widget _buildInvoiceHeader(BuildContext context, {required DateTime date}) {
+    final invoiceNumber = _safeString(widget.invoice['invoiceNumber']);
+
+    final financialYear = _safeString(widget.invoice['financialYear']);
+
+    return Padding(
+      padding: EdgeInsets.all(context.wp(5)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'TAX INVOICE',
+                  style: AppTextStyles.headlineLarge.copyWith(
+                    color: const Color(0xFF101828),
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+
+                SizedBox(height: context.hp(0.4)),
+
+                Text(
+                  'Original for recipient',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: const Color(0xFF98A2B3),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          SizedBox(width: context.wp(3)),
+
+          Flexible(
+            child: _buildInvoiceMeta(
+              context,
+              invoiceNumber: invoiceNumber,
+              date: _formatDate(date),
+              financialYear: financialYear,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildInvoiceMeta(
     BuildContext context, {
@@ -497,10 +991,9 @@ class InvoicePreviewScreen extends StatelessWidget {
     required String financialYear,
   }) {
     return Container(
-      constraints: BoxConstraints(minWidth: context.wp(34)),
       padding: EdgeInsets.symmetric(
         horizontal: context.wp(3),
-        vertical: context.hp(1.3),
+        vertical: context.hp(1.2),
       ),
       decoration: BoxDecoration(
         color: const Color(0xFFF8F9FB),
@@ -511,22 +1004,28 @@ class InvoicePreviewScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Text(
-            'Invoice No.',
+            'INVOICE NO.',
             style: AppTextStyles.bodySmall.copyWith(
               color: const Color(0xFF98A2B3),
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
             ),
           ),
+
           SizedBox(height: context.hp(0.3)),
+
           Text(
             invoiceNumber.isEmpty ? '-' : invoiceNumber,
             style: AppTextStyles.titleMedium.copyWith(
-              fontWeight: FontWeight.w800,
-              color: const Color(0xFF16181D),
+              color: const Color(0xFF101828),
+              fontWeight: FontWeight.w900,
             ),
           ),
+
           SizedBox(height: context.hp(0.8)),
+
           _metaRow('Date', date),
+
           if (financialYear.isNotEmpty) _metaRow('FY', financialYear),
         ],
       ),
@@ -545,11 +1044,14 @@ class InvoicePreviewScreen extends StatelessWidget {
               color: const Color(0xFF98A2B3),
             ),
           ),
-          Text(
-            value,
-            style: AppTextStyles.bodySmall.copyWith(
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFF475467),
+          Flexible(
+            child: Text(
+              value,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: const Color(0xFF475467),
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -557,40 +1059,58 @@ class InvoicePreviewScreen extends StatelessWidget {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // CUSTOMER
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // PARTY DETAILS
+  // ===========================================================================
 
-  Widget _buildCustomerCard(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(context.wp(4)),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FB),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE4E7EC)),
+  Widget _buildPartyAndInvoiceDetails(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.all(context.wp(5)),
+      child: Column(
+        children: [
+          _buildBillToCard(context),
+
+          if (_hasBusinessDetails()) ...[
+            SizedBox(height: context.hp(1.5)),
+            _buildInvoiceDetailsCard(context),
+          ],
+        ],
       ),
+    );
+  }
+
+  Widget _buildBillToCard(BuildContext context) {
+    final name = _safeString(widget.invoice['customerName']);
+
+    final address = _safeString(widget.invoice['customerAddress']);
+
+    final phone = _safeString(widget.invoice['customerPhone']);
+
+    final email = _safeString(widget.invoice['customerEmail']);
+
+    final gstin = _safeString(widget.invoice['customerGstin']);
+
+    return _outlinedSection(
+      context,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionTitle(context, icon: Icons.person_outline, title: 'Bill To'),
 
-          SizedBox(height: context.hp(1.5)),
+          SizedBox(height: context.hp(1.3)),
 
           Text(
-            _safeString(invoice['customerName']).isEmpty
-                ? 'Customer'
-                : _safeString(invoice['customerName']),
+            name.isEmpty ? 'Customer' : name,
             style: AppTextStyles.titleMedium.copyWith(
+              color: const Color(0xFF101828),
               fontWeight: FontWeight.w800,
-              color: const Color(0xFF16181D),
             ),
           ),
 
-          if (_safeString(invoice['customerAddress']).isNotEmpty) ...[
-            SizedBox(height: context.hp(0.6)),
+          if (address.isNotEmpty) ...[
+            SizedBox(height: context.hp(0.5)),
             Text(
-              _safeString(invoice['customerAddress']),
+              address,
               style: AppTextStyles.bodySmall.copyWith(
                 color: const Color(0xFF667085),
                 height: 1.4,
@@ -598,64 +1118,91 @@ class InvoicePreviewScreen extends StatelessWidget {
             ),
           ],
 
-          SizedBox(height: context.hp(1)),
+          if (phone.isNotEmpty || email.isNotEmpty || gstin.isNotEmpty) ...[
+            SizedBox(height: context.hp(1)),
 
-          Wrap(
-            spacing: context.wp(4),
-            runSpacing: context.hp(0.7),
-            children: [
-              if (_safeString(invoice['customerPhone']).isNotEmpty)
-                _contactRow(
-                  Icons.phone_outlined,
-                  _safeString(invoice['customerPhone']),
-                ),
-              if (_safeString(invoice['customerEmail']).isNotEmpty)
-                _contactRow(
-                  Icons.email_outlined,
-                  _safeString(invoice['customerEmail']),
-                ),
-              if (_safeString(invoice['customerGstin']).isNotEmpty)
-                _contactRow(
-                  Icons.receipt_long_outlined,
-                  'GSTIN: ${invoice['customerGstin']}',
-                ),
-            ],
+            Wrap(
+              spacing: context.wp(4),
+              runSpacing: context.hp(0.7),
+              children: [
+                if (phone.isNotEmpty) _contactRow(Icons.phone_outlined, phone),
+                if (email.isNotEmpty) _contactRow(Icons.email_outlined, email),
+                if (gstin.isNotEmpty)
+                  _contactRow(Icons.receipt_long_outlined, 'GSTIN: $gstin'),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInvoiceDetailsCard(BuildContext context) {
+    return _outlinedSection(
+      context,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle(
+            context,
+            icon: Icons.receipt_long_outlined,
+            title: 'Invoice Details',
+          ),
+
+          SizedBox(height: context.hp(1.1)),
+
+          _detailItem(
+            'GSTIN',
+            _safeString(widget.invoice['sellerGstin']),
+            hideIfEmpty: true,
+          ),
+
+          _detailItem(
+            'DL No.',
+            _safeString(widget.invoice['sellerLicense']),
+            hideIfEmpty: true,
+          ),
+
+          _detailItem(
+            'Dispatched Through',
+            _safeString(widget.invoice['dispatchedThrough']),
+            hideIfEmpty: true,
+          ),
+
+          _detailItem(
+            'Reference',
+            _safeString(widget.invoice['reference']),
+            hideIfEmpty: true,
+          ),
+
+          _detailItem(
+            'Salesperson',
+            _safeString(widget.invoice['salesPerson']),
+            hideIfEmpty: true,
           ),
         ],
       ),
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // DETAILS CARD
-  // ---------------------------------------------------------------------------
-
-  Widget _buildDetailsCard(
-    BuildContext context, {
-    required String title,
-    required IconData icon,
-    required List<Widget> children,
-  }) {
+  Widget _outlinedSection(BuildContext context, {required Widget child}) {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(context.wp(4)),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFFAFBFC),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE4E7EC)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionTitle(context, icon: icon, title: title),
-          SizedBox(height: context.hp(1.2)),
-          ...children,
-        ],
-      ),
+      child: child,
     );
   }
 
-  Widget _detailItem(String title, String value) {
+  Widget _detailItem(String title, String value, {bool hideIfEmpty = false}) {
+    if (hideIfEmpty && value.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -676,7 +1223,7 @@ class InvoicePreviewScreen extends StatelessWidget {
               value,
               style: AppTextStyles.bodySmall.copyWith(
                 color: const Color(0xFF344054),
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -685,9 +1232,33 @@ class InvoicePreviewScreen extends StatelessWidget {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // ITEMS TABLE
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // ITEMS
+  // ===========================================================================
+
+  Widget _buildItemsSection(
+    BuildContext context,
+    List<Map<String, dynamic>> items,
+  ) {
+    return Padding(
+      padding: EdgeInsets.all(context.wp(5)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle(
+            context,
+            icon: Icons.shopping_bag_outlined,
+            title: 'Items & Services',
+            subtitle: '${items.length} ${items.length == 1 ? 'item' : 'items'}',
+          ),
+
+          SizedBox(height: context.hp(1.5)),
+
+          _buildItemsTable(context, items),
+        ],
+      ),
+    );
+  }
 
   Widget _buildItemsTable(
     BuildContext context,
@@ -695,14 +1266,14 @@ class InvoicePreviewScreen extends StatelessWidget {
   ) {
     const tableWidth = 760.0;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFFE4E7EC)),
-          borderRadius: BorderRadius.circular(12),
-        ),
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE4E7EC)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: SizedBox(
@@ -758,15 +1329,15 @@ class InvoicePreviewScreen extends StatelessWidget {
     int? flex,
     Alignment alignment = Alignment.centerLeft,
   }) {
-    Widget child = Align(
+    final child = Align(
       alignment: alignment,
       child: Text(
         text,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: AppTextStyles.bodySmall.copyWith(
-          fontWeight: FontWeight.w800,
           color: const Color(0xFF344054),
+          fontWeight: FontWeight.w800,
         ),
       ),
     );
@@ -780,9 +1351,16 @@ class InvoicePreviewScreen extends StatelessWidget {
 
   Widget _buildTableRow(int index, Map<String, dynamic> item) {
     final quantity = _number(item['quantity']);
-    final rate = _number(item['price']);
-    final gst = _number(item['gstPercent']);
-    final amount = _number(item['amount']);
+
+    final rate = _number(item['price'] ?? item['rate']);
+
+    final gst = _number(item['gstPercent'] ?? item['gst']);
+
+    final amount = item['amount'] != null
+        ? _number(item['amount'])
+        : quantity * rate;
+
+    final service = _safeString(item['name'] ?? item['service']);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 15),
@@ -790,7 +1368,6 @@ class InvoicePreviewScreen extends StatelessWidget {
         border: Border(bottom: BorderSide(color: Color(0xFFE4E7EC))),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(
             width: 45,
@@ -798,6 +1375,7 @@ class InvoicePreviewScreen extends StatelessWidget {
               '${index + 1}',
               style: AppTextStyles.bodySmall.copyWith(
                 color: const Color(0xFF667085),
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -805,12 +1383,10 @@ class InvoicePreviewScreen extends StatelessWidget {
           Expanded(
             flex: 4,
             child: Text(
-              _safeString(item['name']).isEmpty
-                  ? '-'
-                  : _safeString(item['name']),
+              service.isEmpty ? '-' : service,
               style: AppTextStyles.bodySmall.copyWith(
-                color: const Color(0xFF16181D),
-                fontWeight: FontWeight.w600,
+                color: const Color(0xFF101828),
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -841,13 +1417,11 @@ class InvoicePreviewScreen extends StatelessWidget {
           SizedBox(
             width: 60,
             child: Text(
-              quantity % 1 == 0
-                  ? quantity.toStringAsFixed(0)
-                  : quantity.toStringAsFixed(2),
+              _quantity(quantity),
               textAlign: TextAlign.center,
               style: AppTextStyles.bodySmall.copyWith(
                 color: const Color(0xFF344054),
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -869,8 +1443,8 @@ class InvoicePreviewScreen extends StatelessWidget {
               _money(amount),
               textAlign: TextAlign.right,
               style: AppTextStyles.bodySmall.copyWith(
-                color: const Color(0xFF16181D),
-                fontWeight: FontWeight.w800,
+                color: const Color(0xFF101828),
+                fontWeight: FontWeight.w900,
               ),
             ),
           ),
@@ -879,64 +1453,122 @@ class InvoicePreviewScreen extends StatelessWidget {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // TOTALS
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // TOTALS + BANK
+  // ===========================================================================
+
+  Widget _buildTotalsAndBankSection(
+    BuildContext context, {
+    required double subtotal,
+    required double sgst,
+    required double cgst,
+    required double totalGst,
+    required double roundOff,
+    required double total,
+  }) {
+    return Padding(
+      padding: EdgeInsets.all(context.wp(5)),
+      child: Column(
+        children: [
+          _buildTotalsSection(
+            context,
+            subtotal: subtotal,
+            sgst: sgst,
+            cgst: cgst,
+            totalGst: totalGst,
+            roundOff: roundOff,
+            total: total,
+          ),
+
+          if (_hasBankDetails()) ...[
+            SizedBox(height: context.hp(1.5)),
+            _buildBankDetails(context),
+          ],
+        ],
+      ),
+    );
+  }
 
   Widget _buildTotalsSection(
     BuildContext context, {
     required double subtotal,
     required double sgst,
     required double cgst,
+    required double totalGst,
     required double roundOff,
     required double total,
   }) {
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.all(context.wp(4)),
       decoration: BoxDecoration(
         color: const Color(0xFFF8F9FB),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE4E7EC)),
       ),
-      child: Column(
-        children: [
-          _amountRow('Sub Total', _money(subtotal)),
-          _amountRow('SGST', _money(sgst)),
-          _amountRow('CGST', _money(cgst)),
-          _amountRow('Round Off', _money(roundOff)),
+      child: Padding(
+        padding: EdgeInsets.all(context.wp(4)),
+        child: Column(
+          children: [
+            _amountRow('Sub Total', _money(subtotal)),
 
-          SizedBox(height: context.hp(1)),
+            _amountRow('SGST', _money(sgst)),
 
-          const Divider(height: 1, color: Color(0xFFD0D5DD)),
+            _amountRow('CGST', _money(cgst)),
 
-          SizedBox(height: context.hp(1.2)),
+            _amountRow('Total GST', _money(totalGst)),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Grand Total',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: const Color(0xFF16181D),
+            _amountRow('Round Off', _money(roundOff)),
+
+            SizedBox(height: context.hp(1)),
+
+            const Divider(height: 1, color: Color(0xFFD0D5DD)),
+
+            SizedBox(height: context.hp(1.2)),
+
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Grand Total',
+                        style: AppTextStyles.titleMedium.copyWith(
+                          color: const Color(0xFF101828),
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      SizedBox(height: context.hp(0.2)),
+                      Text(
+                        'Amount payable',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: const Color(0xFF98A2B3),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Text(
-                _money(total),
-                style: AppTextStyles.headlineLarge.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.primary,
+
+                SizedBox(width: context.wp(2)),
+
+                Text(
+                  _money(total),
+                  textAlign: TextAlign.right,
+                  style: AppTextStyles.headlineLarge.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _amountRow(String title, String amount, {bool isTotal = false}) {
+  Widget _amountRow(String title, String amount) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -945,10 +1577,8 @@ class InvoicePreviewScreen extends StatelessWidget {
           Text(
             title,
             style: AppTextStyles.bodySmall.copyWith(
-              color: isTotal
-                  ? const Color(0xFF16181D)
-                  : const Color(0xFF667085),
-              fontWeight: isTotal ? FontWeight.w800 : FontWeight.w500,
+              color: const Color(0xFF667085),
+              fontWeight: FontWeight.w600,
             ),
           ),
           Text(
@@ -963,11 +1593,15 @@ class InvoicePreviewScreen extends StatelessWidget {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // BANK DETAILS
-  // ---------------------------------------------------------------------------
-
   Widget _buildBankDetails(BuildContext context) {
+    final bankName = _safeString(widget.invoice['bankName']);
+
+    final accountNumber = _safeString(widget.invoice['accountNumber']);
+
+    final ifsc = _safeString(
+      widget.invoice['ifsc'] ?? widget.invoice['ifscCode'],
+    );
+
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(context.wp(4)),
@@ -980,8 +1614,8 @@ class InvoicePreviewScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: context.wp(12),
-            height: context.wp(12),
+            width: context.wp(11),
+            height: context.wp(11),
             decoration: BoxDecoration(
               color: AppColors.primary.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(12),
@@ -989,7 +1623,7 @@ class InvoicePreviewScreen extends StatelessWidget {
             child: Icon(
               Icons.account_balance_outlined,
               color: AppColors.primary,
-              size: context.wp(6),
+              size: context.wp(5.5),
             ),
           ),
 
@@ -1002,21 +1636,19 @@ class InvoicePreviewScreen extends StatelessWidget {
                 Text(
                   'Bank Details',
                   style: AppTextStyles.titleMedium.copyWith(
+                    color: const Color(0xFF101828),
                     fontWeight: FontWeight.w800,
-                    color: const Color(0xFF16181D),
                   ),
                 ),
 
-                SizedBox(height: context.hp(1)),
+                SizedBox(height: context.hp(0.9)),
 
-                if (_safeString(invoice['bankName']).isNotEmpty)
-                  _bankRow('Bank', _safeString(invoice['bankName'])),
+                if (bankName.isNotEmpty) _bankRow('Bank', bankName),
 
-                if (_safeString(invoice['accountNumber']).isNotEmpty)
-                  _bankRow('A/C No.', _safeString(invoice['accountNumber'])),
+                if (accountNumber.isNotEmpty)
+                  _bankRow('A/C No.', accountNumber),
 
-                if (_safeString(invoice['ifsc']).isNotEmpty)
-                  _bankRow('IFSC', _safeString(invoice['ifsc'])),
+                if (ifsc.isNotEmpty) _bankRow('IFSC', ifsc),
               ],
             ),
           ),
@@ -1029,6 +1661,7 @@ class InvoicePreviewScreen extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 5),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
             width: 55,
@@ -1044,7 +1677,7 @@ class InvoicePreviewScreen extends StatelessWidget {
               value,
               style: AppTextStyles.bodySmall.copyWith(
                 color: const Color(0xFF344054),
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -1053,42 +1686,137 @@ class InvoicePreviewScreen extends StatelessWidget {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // PAYMENT BADGE
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // PAYMENT STATUS
+  // ===========================================================================
 
-  Widget _buildPaymentBadge(BuildContext context, String status) {
+  Widget _buildPaymentStatus(BuildContext context, String status) {
     final isPaid = status.toLowerCase() == 'paid';
 
     final backgroundColor = isPaid
-        ? AppColors.success.withValues(alpha: 0.10)
-        : Colors.orange.withValues(alpha: 0.10);
+        ? AppColors.success.withValues(alpha: 0.08)
+        : Colors.orange.withValues(alpha: 0.08);
 
     final foregroundColor = isPaid ? AppColors.success : Colors.orange.shade800;
 
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: context.wp(3),
-        vertical: context.hp(0.9),
+    return Padding(
+      padding: EdgeInsets.all(context.wp(5)),
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(
+          horizontal: context.wp(4),
+          vertical: context.hp(1.5),
+        ),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: foregroundColor.withValues(alpha: 0.15)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: context.wp(10),
+              height: context.wp(10),
+              decoration: BoxDecoration(
+                color: foregroundColor.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isPaid ? Icons.check_circle_rounded : Icons.schedule_rounded,
+                color: foregroundColor,
+                size: context.wp(5),
+              ),
+            ),
+
+            SizedBox(width: context.wp(3)),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Payment Status',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: const Color(0xFF667085),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+
+                  SizedBox(height: context.hp(0.2)),
+
+                  Text(
+                    status,
+                    style: AppTextStyles.titleMedium.copyWith(
+                      color: foregroundColor,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: context.wp(3),
+                vertical: context.hp(0.7),
+              ),
+              decoration: BoxDecoration(
+                color: foregroundColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(30),
+              ),
+              child: Text(
+                isPaid ? 'PAID' : status.toUpperCase(),
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: foregroundColor,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(30),
+    );
+  }
+
+  // ===========================================================================
+  // SIGNATURE
+  // ===========================================================================
+
+  Widget _buildSignatureSection(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        context.wp(5),
+        context.hp(3),
+        context.wp(5),
+        context.hp(4),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Icon(
-            isPaid ? Icons.check_circle_rounded : Icons.schedule_rounded,
-            size: context.wp(4),
-            color: foregroundColor,
-          ),
-          SizedBox(width: context.wp(1.5)),
-          Text(
-            status,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: foregroundColor,
-              fontWeight: FontWeight.w800,
+          SizedBox(
+            width: context.wp(38),
+            child: Column(
+              children: [
+                SizedBox(height: context.hp(5)),
+
+                Container(
+                  height: 1,
+                  width: double.infinity,
+                  color: const Color(0xFF344054),
+                ),
+
+                SizedBox(height: context.hp(0.7)),
+
+                Text(
+                  'Authorized Signature',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: const Color(0xFF667085),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -1096,73 +1824,103 @@ class InvoicePreviewScreen extends StatelessWidget {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // PRINT BUTTON
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // ACTION BUTTONS
+  // ===========================================================================
 
-  Widget _buildPrintButton(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required VoidCallback onPressed,
-  }) {
-    return SizedBox(
-      width: double.infinity,
-      height: context.hp(6.5),
-      child: ElevatedButton.icon(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-        icon: Icon(icon, size: context.wp(5)),
-        label: Text(
-          title,
-          style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w700),
-        ),
-      ),
+  Widget _buildActionButtons(BuildContext context) {
+    return Consumer<InvoiceProvider>(
+      builder: (context, provider, child) {
+        final isLoading = provider.isLoading;
+
+        return Column(
+          children: [
+            SizedBox(
+              width: double.infinity,
+              height: context.hp(6.5),
+              child: ElevatedButton.icon(
+                onPressed: isLoading ? null : _printInvoice,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: AppColors.primary.withValues(
+                    alpha: 0.55,
+                  ),
+                  disabledForegroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                ),
+                icon: isLoading
+                    ? SizedBox(
+                        width: context.wp(5),
+                        height: context.wp(5),
+                        child: const CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Icon(Icons.print_outlined, size: context.wp(5)),
+                label: Text(
+                  isLoading ? 'Saving Invoice...' : 'Print Invoice',
+                  style: AppTextStyles.button.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+
+            SizedBox(height: context.hp(1.2)),
+
+            SizedBox(
+              width: double.infinity,
+              height: context.hp(6.5),
+              child: OutlinedButton.icon(
+                onPressed: isLoading ? null : _printViaBluetooth,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  disabledForegroundColor: AppColors.primary.withValues(
+                    alpha: 0.45,
+                  ),
+                  side: BorderSide(
+                    color: AppColors.primary.withValues(alpha: 0.45),
+                    width: 1.2,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                ),
+                icon: Icon(Icons.bluetooth_outlined, size: context.wp(5)),
+                label: Text(
+                  'Print via Bluetooth',
+                  style: AppTextStyles.button.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // BLUETOOTH BUTTON
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // BLUETOOTH
+  // ===========================================================================
 
-  Widget _buildBluetoothButton(
-    BuildContext context, {
-    required VoidCallback onPressed,
-  }) {
-    return SizedBox(
-      width: double.infinity,
-      height: context.hp(6.5),
-      child: OutlinedButton.icon(
-        onPressed: onPressed,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.primary,
-          side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-        icon: Icon(Icons.bluetooth_outlined, size: context.wp(5)),
-        label: Text(
-          'Print via Bluetooth',
-          style: AppTextStyles.button.copyWith(
-            color: AppColors.primary,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
+  Future<void> _printViaBluetooth() async {
+    _showSnackBar(
+      'Bluetooth printing will be implemented separately.',
+      isError: false,
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // SECTION TITLE
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // UI HELPERS
+  // ===========================================================================
 
   Widget _sectionTitle(
     BuildContext context, {
@@ -1191,10 +1949,11 @@ class InvoicePreviewScreen extends StatelessWidget {
               Text(
                 title,
                 style: AppTextStyles.titleMedium.copyWith(
+                  color: const Color(0xFF101828),
                   fontWeight: FontWeight.w800,
-                  color: const Color(0xFF16181D),
                 ),
               ),
+
               if (subtitle != null)
                 Text(
                   subtitle,
@@ -1209,17 +1968,16 @@ class InvoicePreviewScreen extends StatelessWidget {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // CONTACT ROW
-  // ---------------------------------------------------------------------------
-
   Widget _contactRow(IconData icon, String text) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 14, color: const Color(0xFF98A2B3)),
+
         const SizedBox(width: 5),
-        Flexible(
+
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 240),
           child: Text(
             text,
             maxLines: 2,
@@ -1233,29 +1991,53 @@ class InvoicePreviewScreen extends StatelessWidget {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // DIVIDER
-  // ---------------------------------------------------------------------------
-
-  Widget _sectionDivider() {
+  Widget _divider() {
     return const Divider(height: 1, thickness: 1, color: Color(0xFFE4E7EC));
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // CONDITIONS
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   bool _hasBusinessDetails() {
-    return _safeString(invoice['sellerGstin']).isNotEmpty ||
-        _safeString(invoice['sellerLicense']).isNotEmpty ||
-        _safeString(invoice['dispatchedThrough']).isNotEmpty ||
-        _safeString(invoice['reference']).isNotEmpty ||
-        _safeString(invoice['salesPerson']).isNotEmpty;
+    return _safeString(widget.invoice['sellerGstin']).isNotEmpty ||
+        _safeString(widget.invoice['sellerLicense']).isNotEmpty ||
+        _safeString(widget.invoice['dispatchedThrough']).isNotEmpty ||
+        _safeString(widget.invoice['reference']).isNotEmpty ||
+        _safeString(widget.invoice['salesPerson']).isNotEmpty;
   }
 
   bool _hasBankDetails() {
-    return _safeString(invoice['bankName']).isNotEmpty ||
-        _safeString(invoice['accountNumber']).isNotEmpty ||
-        _safeString(invoice['ifsc']).isNotEmpty;
+    return _safeString(widget.invoice['bankName']).isNotEmpty ||
+        _safeString(widget.invoice['accountNumber']).isNotEmpty ||
+        _safeString(
+          widget.invoice['ifsc'] ?? widget.invoice['ifscCode'],
+        ).isNotEmpty;
+  }
+
+  bool _hasBankDetailsForModel(InvoiceModel invoice) {
+    return invoice.bankName.isNotEmpty ||
+        invoice.accountNumber.isNotEmpty ||
+        invoice.ifscCode.isNotEmpty;
+  }
+
+  // ===========================================================================
+  // SNACKBAR
+  // ===========================================================================
+
+  void _showSnackBar(String message, {required bool isError}) {
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: isError ? Colors.red.shade700 : AppColors.success,
+        ),
+      );
   }
 }
