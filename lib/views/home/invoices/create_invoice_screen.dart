@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:invoice/core/constants/app_colors.dart';
 import 'package:invoice/core/constants/app_responsive.dart';
 import 'package:invoice/core/theme/app_textstyles.dart';
+import 'package:invoice/data/models/home/products/products_model.dart';
+import 'package:invoice/provider/home/products/products_provider.dart';
 import 'package:invoice/views/home/invoices/invoice_preview_screen.dart';
+import 'package:provider/provider.dart';
 
 class CreateInvoiceScreen extends StatefulWidget {
   const CreateInvoiceScreen({super.key});
@@ -16,6 +20,12 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
   final _formKey = GlobalKey<FormState>();
 
   int _currentStep = 0;
+
+  Timer? _productSearchDebounce;
+
+  bool _showProductDropdown = false;
+
+  bool _isProductSelected = false;
 
   static const List<String> _stepTitles = [
     'Seller Details',
@@ -100,7 +110,7 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
   // INVOICE CONTROLLERS
   // ---------------------------------------------------------------------------
 
-  final _invoiceNumberController = TextEditingController(text: '075');
+  final _invoiceNumberController = TextEditingController(text: 'INV-1');
 
   final _financialYearController = TextEditingController(text: '2025-2026');
 
@@ -152,6 +162,7 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
 
   @override
   void dispose() {
+    _productSearchDebounce?.cancel();
     _sellerNameController.dispose();
     _sellerAddressController.dispose();
     _sellerPhoneController.dispose();
@@ -182,6 +193,319 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
     _gstController.dispose();
 
     super.dispose();
+  }
+
+  void _onProductSearchChanged(String value) {
+    _productSearchDebounce?.cancel();
+
+    final query = value.trim();
+
+    setState(() {
+      _isProductSelected = false;
+      _showProductDropdown = query.length >= 3;
+    });
+
+    if (query.length < 3) {
+      context.read<ProductsProvider>().clearProducts();
+      return;
+    }
+
+    _productSearchDebounce = Timer(const Duration(milliseconds: 400), () async {
+      if (!mounted) {
+        return;
+      }
+
+      await context.read<ProductsProvider>().searchProducts(query);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _showProductDropdown = true;
+      });
+    });
+  }
+
+  void _selectProduct(ProductModel product) {
+    setState(() {
+      _productController.text = product.productName;
+      _productController.selection = TextSelection.collapsed(
+        offset: _productController.text.length,
+      );
+
+      _isProductSelected = true;
+      _showProductDropdown = false;
+    });
+
+    FocusScope.of(context).unfocus();
+  }
+
+  Widget _productSearchField() {
+    return Consumer<ProductsProvider>(
+      builder: (context, provider, child) {
+        final showDropdown =
+            _showProductDropdown && _productController.text.trim().length >= 3;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _fieldHeading('Product / Service'),
+
+            SizedBox(height: context.hp(0.8)),
+
+            TextFormField(
+              controller: _productController,
+              keyboardType: TextInputType.text,
+              textInputAction: TextInputAction.next,
+              onChanged: _onProductSearchChanged,
+              onTap: () {
+                if (_productController.text.trim().length >= 3) {
+                  setState(() {
+                    _showProductDropdown = true;
+                  });
+                }
+              },
+              decoration: InputDecoration(
+                hintText: 'Search or enter product / service',
+                prefixIcon: const Icon(Icons.inventory_2_outlined, size: 20),
+                suffixIcon: provider.isLoading
+                    ? Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      )
+                    : _productController.text.isNotEmpty
+                    ? IconButton(
+                        onPressed: () {
+                          _productController.clear();
+
+                          context.read<ProductsProvider>().clearProducts();
+
+                          setState(() {
+                            _showProductDropdown = false;
+                            _isProductSelected = false;
+                          });
+                        },
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                      )
+                    : null,
+                filled: true,
+                fillColor: Theme.of(context).colorScheme.surface,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: context.wp(3.5),
+                  vertical: context.hp(1.7),
+                ),
+              ),
+            ),
+
+            if (showDropdown) ...[
+              SizedBox(height: context.hp(0.8)),
+
+              _buildProductDropdown(provider),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildProductDropdown(ProductsProvider provider) {
+    final products = provider.products;
+
+    if (provider.isLoading && products.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(context.wp(4)),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.6),
+          ),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.primary,
+              ),
+            ),
+
+            SizedBox(width: context.wp(3)),
+
+            Text('Searching products...', style: AppTextStyles.bodyMedium),
+          ],
+        ),
+      );
+    }
+
+    if (products.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(context.wp(4)),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.6),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.search_off_outlined,
+              color: Theme.of(
+                context,
+              ).textTheme.bodySmall?.color?.withValues(alpha: 0.6),
+            ),
+
+            SizedBox(width: context.wp(2.5)),
+
+            Expanded(
+              child: Text(
+                'No product found. You can use "${_productController.text.trim()}" as a new product.',
+                style: AppTextStyles.bodyMedium,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      constraints: BoxConstraints(maxHeight: context.hp(32)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.6),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: EdgeInsets.symmetric(vertical: context.hp(0.8)),
+        itemCount: products.length,
+        separatorBuilder: (_, __) {
+          return Divider(
+            height: 1,
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+          );
+        },
+        itemBuilder: (context, index) {
+          final product = products[index];
+
+          return _productDropdownItem(product);
+        },
+      ),
+    );
+  }
+
+  Widget _productDropdownItem(ProductModel product) {
+    return InkWell(
+      onTap: () => _selectProduct(product),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: context.wp(3.5),
+          vertical: context.hp(1.3),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: const Icon(
+                Icons.inventory_2_outlined,
+                size: 20,
+                color: AppColors.primary,
+              ),
+            ),
+
+            SizedBox(width: context.wp(3)),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.productName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+
+                  if (product.companyName.isNotEmpty) ...[
+                    SizedBox(height: context.hp(0.35)),
+
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.business_outlined,
+                          size: 14,
+                          color: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.color?.withValues(alpha: 0.55),
+                        ),
+
+                        SizedBox(width: context.wp(1)),
+
+                        Expanded(
+                          child: Text(
+                            product.companyName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.color
+                                  ?.withValues(alpha: 0.65),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            SizedBox(width: context.wp(2)),
+
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 15,
+              color: Theme.of(
+                context,
+              ).textTheme.bodySmall?.color?.withValues(alpha: 0.4),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1056,13 +1380,7 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
       icon: Icons.inventory_2_outlined,
       child: Column(
         children: [
-          _field(
-            controller: _productController,
-            heading: 'Product / Service',
-            hint: 'Example: Dental Cleaning',
-            icon: Icons.inventory_2_outlined,
-          ),
-
+          _productSearchField(),
           SizedBox(height: context.hp(2)),
 
           _field(

@@ -146,15 +146,6 @@ class _WelcomeHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Good Afternoon 👋',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.grey500,
-                  fontSize: context.sp(13),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-
-              Text(
                 'Welcome back!',
                 style: AppTextStyles.titleLarge.copyWith(
                   fontWeight: FontWeight.w800,

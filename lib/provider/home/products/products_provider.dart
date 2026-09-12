@@ -9,24 +9,14 @@ class ProductsProvider extends ChangeNotifier {
   ProductsProvider(this.productsRepository);
 
   bool _isLoading = false;
-  bool get isLoading => _isLoading;
-
-  set isLoading(bool value) {
-    _isLoading = value;
-    notifyListeners();
-  }
-
   String? _errorMessage;
-  String? get errorMessage => _errorMessage;
-
-  set errorMessage(String value) {
-    _errorMessage = value;
-    notifyListeners();
-  }
 
   List<ProductModel> _products = [];
-
   PaginationModel _pagination = const PaginationModel();
+
+  bool get isLoading => _isLoading;
+
+  String? get errorMessage => _errorMessage;
 
   List<ProductModel> get products => List.unmodifiable(_products);
 
@@ -71,7 +61,13 @@ class ProductsProvider extends ChangeNotifier {
   }
 
   Future<bool> searchProducts(String search) async {
-    return getProducts(search: search, page: 1, limit: 10);
+    final query = search.trim();
+
+    if (query.length < 3) {
+      return false;
+    }
+
+    return getProducts(search: query, page: 1, limit: 10);
   }
 
   void clearProducts() {
