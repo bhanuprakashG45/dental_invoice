@@ -114,9 +114,9 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
 
   final _financialYearController = TextEditingController(text: '2025-2026');
 
-  final _dispatchedThroughController = TextEditingController();
+  final _dispatchedThroughController = TextEditingController(text: 'Courier');
 
-  final _referenceController = TextEditingController();
+  final _referenceController = TextEditingController(text: 'N/A');
 
   final _salesPersonController = TextEditingController(
     text: _defaultSalesPerson,
@@ -967,27 +967,74 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Create Invoice')),
-
-      body: Column(
-        children: [
-          _buildProgressHeader(),
-
-          Expanded(
-            child: Form(
-              key: _formKey,
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(
-                  horizontal: context.wp(4),
-                  vertical: context.hp(2),
-                ),
-                child: _buildCurrentStep(),
-              ),
-            ),
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        titleSpacing: context.wp(4),
+        automaticallyImplyLeading: false,
+        leading: InkWell(
+          onTap: () => Navigator.pop(context),
+          child: Icon(Icons.arrow_back_ios, color: AppColors.card),
+        ),
+        title: Text(
+          'Create Invoice',
+          style: AppTextStyles.titleLarge.copyWith(
+            color: AppColors.card,
+            fontWeight: FontWeight.w600,
+            fontSize: context.sp(20),
           ),
-        ],
+        ),
       ),
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF4F8CFF),
+              Color(0xFF8FB7FF),
+              Color(0xFFEAF2FF),
+              Color(0xFFF7F8FC),
+            ],
+            stops: [0.0, 0.18, 0.42, 0.75],
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          bottom: false,
+          child: Column(
+            children: [
+              SizedBox(
+                height: kToolbarHeight + MediaQuery.of(context).padding.top,
+              ),
 
+              _buildProgressHeader(),
+
+              Expanded(
+                child: Form(
+                  key: _formKey,
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: EdgeInsets.fromLTRB(
+                      context.wp(4),
+                      context.hp(2),
+                      context.wp(4),
+                      context.hp(3),
+                    ),
+                    child: _buildCurrentStep(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
       bottomNavigationBar: _buildBottomNavigation(),
     );
   }
@@ -995,10 +1042,12 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
   // ---------------------------------------------------------------------------
   // PROGRESS HEADER
   // ---------------------------------------------------------------------------
-
   Widget _buildProgressHeader() {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+
+    const currentColor = Colors.black;
+    final completedColor = AppColors.primary;
 
     return Container(
       width: double.infinity,
@@ -1009,17 +1058,10 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
         context.hp(1.6),
       ),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: Colors.transparent,
         border: Border(
-          bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.45)),
+          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.35)),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.025),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1027,8 +1069,19 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
           final isCompleted = index < _currentStep;
           final isCurrent = index == _currentStep;
 
-          final activeColor = AppColors.primary;
-          final inactiveColor = theme.dividerColor.withValues(alpha: 0.45);
+          final stepColor = isCurrent
+              ? currentColor
+              : isCompleted
+              ? completedColor
+              : colorScheme.surface.withValues(alpha: 0.92);
+
+          final iconColor = isCurrent || isCompleted
+              ? Colors.white
+              : theme.textTheme.bodySmall?.color?.withValues(alpha: 0.5);
+
+          final connectorColor = index < _currentStep
+              ? completedColor
+              : Colors.white.withValues(alpha: 0.55);
 
           return Expanded(
             child: Row(
@@ -1049,21 +1102,21 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
                     height: 40,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: isCurrent || isCompleted
-                          ? activeColor
-                          : colorScheme.surface,
+                      color: stepColor,
                       border: Border.all(
-                        color: isCurrent || isCompleted
-                            ? activeColor
-                            : inactiveColor,
+                        color: isCurrent
+                            ? Colors.black
+                            : isCompleted
+                            ? completedColor
+                            : Colors.white.withValues(alpha: 0.7),
                         width: isCurrent ? 2 : 1,
                       ),
                       boxShadow: isCurrent
                           ? [
                               BoxShadow(
-                                color: activeColor.withValues(alpha: 0.18),
-                                blurRadius: 8,
-                                spreadRadius: 1,
+                                color: Colors.black.withValues(alpha: 0.20),
+                                blurRadius: 10,
+                                offset: const Offset(0, 3),
                               ),
                             ]
                           : null,
@@ -1072,11 +1125,7 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
                       child: Icon(
                         isCompleted ? Icons.check_rounded : _stepIcons[index],
                         size: 19,
-                        color: isCurrent || isCompleted
-                            ? Colors.white
-                            : theme.textTheme.bodySmall?.color?.withValues(
-                                alpha: 0.5,
-                              ),
+                        color: iconColor,
                       ),
                     ),
                   ),
@@ -1090,11 +1139,10 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
                       ),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeOut,
                         height: 3,
                         decoration: BoxDecoration(
-                          color: index < _currentStep
-                              ? activeColor
-                              : inactiveColor,
+                          color: connectorColor,
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
@@ -1107,7 +1155,6 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
       ),
     );
   }
-
   // ---------------------------------------------------------------------------
   // CURRENT STEP
   // ---------------------------------------------------------------------------
@@ -1219,7 +1266,6 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
   // ---------------------------------------------------------------------------
   // INVOICE DETAILS
   // ---------------------------------------------------------------------------
-
   Widget _buildInvoiceDetails() {
     return _sectionCard(
       title: 'Invoice Details',
@@ -1238,9 +1284,7 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
                   validator: _requiredValidator,
                 ),
               ),
-
               SizedBox(width: context.wp(3)),
-
               Expanded(
                 child: _field(
                   controller: _financialYearController,
@@ -1300,7 +1344,6 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
       ),
     );
   }
-
   // ---------------------------------------------------------------------------
   // BILL TO
   // ---------------------------------------------------------------------------
@@ -1852,12 +1895,22 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
           textInputAction: maxLines > 1
               ? TextInputAction.newline
               : TextInputAction.next,
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: Theme.of(context).colorScheme.onSurface,
+            fontWeight: FontWeight.w500,
+          ),
           decoration: InputDecoration(
             hintText: hint,
-            prefixIcon: icon == null ? null : Icon(icon, size: 20),
-            alignLabelWithHint: false,
+            hintStyle: AppTextStyles.bodyMedium.copyWith(
+              color: Colors.grey.shade500,
+              fontWeight: FontWeight.w400,
+            ),
+            prefixIcon: icon == null
+                ? null
+                : Icon(icon, size: context.sp(20), color: Colors.grey.shade600),
             filled: true,
-            fillColor: Theme.of(context).colorScheme.surface,
+            fillColor: Colors.white,
+            alignLabelWithHint: maxLines > 1,
             contentPadding: EdgeInsets.symmetric(
               horizontal: context.wp(3.5),
               vertical: maxLines > 1 ? context.hp(1.8) : context.hp(1.7),
@@ -1871,7 +1924,6 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
   // ---------------------------------------------------------------------------
   // DATE FIELD
   // ---------------------------------------------------------------------------
-
   Widget _dateField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1880,29 +1932,37 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
 
         SizedBox(height: context.hp(0.8)),
 
-        InkWell(
-          onTap: _selectDate,
-          borderRadius: BorderRadius.circular(12),
-          child: InputDecorator(
-            decoration: InputDecoration(
-              prefixIcon: const Icon(Icons.event_outlined),
-              filled: true,
-              fillColor: Theme.of(context).colorScheme.surface,
-              contentPadding: EdgeInsets.symmetric(
-                horizontal: context.wp(3.5),
-                vertical: context.hp(1.7),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _selectDate,
+            borderRadius: BorderRadius.circular(14),
+            child: InputDecorator(
+              decoration: InputDecoration(
+                prefixIcon: Icon(
+                  Icons.event_outlined,
+                  size: context.sp(20),
+                  color: Colors.grey.shade600,
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: context.wp(3.5),
+                  vertical: context.hp(1.7),
+                ),
               ),
-            ),
-            child: Text(
-              _formatDate(_invoiceDate),
-              style: AppTextStyles.bodyMedium,
+              child: Text(
+                _formatDate(_invoiceDate),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
           ),
         ),
       ],
     );
   }
-
   // ---------------------------------------------------------------------------
   // TOTAL CARD
   // ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:invoice/data/models/home/invoice/create_invoice_model.dart';
 import 'package:invoice/data/models/home/invoice/invoice_history_response_model.dart';
 import 'package:invoice/data/models/home/invoice/invoice_local_storage_model.dart';
+import 'package:invoice/data/models/home/invoice/sync_invoice_results.dart';
 import 'package:invoice/data/repo/home/invoice/invoice_repository.dart';
 
 class InvoiceProvider extends ChangeNotifier {
@@ -268,10 +269,22 @@ class InvoiceProvider extends ChangeNotifier {
   // SYNC PENDING INVOICES
   // ===========================================================================
 
-  Future<void> syncPendingInvoices() async {
+  // ===========================================================================
+  // SYNC PENDING INVOICES
+  // ===========================================================================
+  Future<SyncInvoicesResult> syncPendingInvoices() async {
     if (_isSyncing) {
-      return;
+      return const SyncInvoicesResult(
+        success: false,
+        syncedCount: 0,
+        failedCount: 0,
+        message: 'Sync is already in progress.',
+      );
     }
+
+    int syncedCount = 0;
+    int failedCount = 0;
+    String? lastError;
 
     try {
       _isSyncing = true;
@@ -284,6 +297,15 @@ class InvoiceProvider extends ChangeNotifier {
           .where((invoice) => !invoice.isSynced)
           .toList();
 
+      if (pendingInvoices.isEmpty) {
+        return const SyncInvoicesResult(
+          success: true,
+          syncedCount: 0,
+          failedCount: 0,
+          message: 'No pending invoices to sync.',
+        );
+      }
+
       for (final invoice in pendingInvoices) {
         try {
           final response = await invoiceRepository.createInvoice(
@@ -291,35 +313,65 @@ class InvoiceProvider extends ChangeNotifier {
           );
 
           if (!response.success) {
+            failedCount++;
+            lastError = response.message.isNotEmpty
+                ? response.message
+                : 'Failed to sync invoice ${invoice.invoiceNo}.';
             continue;
           }
 
-          final syncedInvoice =
-              response.data?.copyWith(isSynced: true) ??
-              invoice.copyWith(isSynced: true);
+          // Delete ONLY after successful API response.
+          await localStorage.deleteInvoice(invoice.invoiceNo);
 
-          await localStorage.updateInvoice(syncedInvoice);
-
-          _updateInvoiceInMemory(syncedInvoice);
+          _invoices.removeWhere((item) => item.invoiceNo == invoice.invoiceNo);
 
           if (_currentInvoice?.invoiceNo == invoice.invoiceNo) {
-            _currentInvoice = syncedInvoice;
+            _currentInvoice = null;
           }
-        } catch (_) {
+
+          syncedCount++;
+
+          notifyListeners();
+        } catch (e) {
+          failedCount++;
+          lastError = _cleanError(e);
           continue;
         }
       }
 
       _invoices = await localStorage.getInvoices();
+
+      final allSuccess = failedCount == 0;
+
+      if (!allSuccess) {
+        _errorMessage = lastError;
+      }
+
+      return SyncInvoicesResult(
+        success: allSuccess,
+        syncedCount: syncedCount,
+        failedCount: failedCount,
+        message: allSuccess
+            ? '$syncedCount invoice${syncedCount == 1 ? '' : 's'} synced successfully.'
+            : syncedCount > 0
+            ? '$syncedCount invoice${syncedCount == 1 ? '' : 's'} synced, '
+                  '$failedCount failed. ${lastError ?? ''}'
+            : lastError ?? 'Unable to sync invoices.',
+      );
     } catch (e) {
       _errorMessage = _cleanError(e);
+
+      return SyncInvoicesResult(
+        success: false,
+        syncedCount: syncedCount,
+        failedCount: failedCount + 1,
+        message: _cleanError(e),
+      );
     } finally {
       _isSyncing = false;
       notifyListeners();
     }
-  }
-
-  // ===========================================================================
+  } // ===========================================================================
   // SYNC SINGLE INVOICE
   // ===========================================================================
 
