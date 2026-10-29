@@ -4,6 +4,7 @@ import 'package:invoice/core/constants/app_responsive.dart';
 import 'package:invoice/core/theme/app_textstyles.dart';
 import 'package:invoice/views/home/invoices/create_invoice_screen.dart';
 import 'package:invoice/views/home/invoices/invoice_history_screen.dart';
+import 'package:invoice/views/home/profile/profile_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -166,7 +167,10 @@ class _TopBar extends StatelessWidget {
               child: InkWell(
                 customBorder: const CircleBorder(),
                 onTap: () {
-                  // Add profile navigation here.
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ProfileScreen()),
+                  );
                 },
                 child: SizedBox(
                   width: profileSize,

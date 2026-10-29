@@ -24,10 +24,6 @@ class InvoicePreviewScreen extends StatefulWidget {
 }
 
 class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
-  // ===========================================================================
-  // PRINT FLOW
-  // ===========================================================================
-
   Future<void> _printInvoice() async {
     final provider = context.read<InvoiceProvider>();
 
@@ -56,10 +52,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
 
     await _generateAndPrintInvoice(savedInvoice);
   }
-
-  // ===========================================================================
-  // PDF GENERATION + SYSTEM PRINT
-  // ===========================================================================
 
   Future<Uint8List> _generateInvoicePdf(InvoiceModel invoice) async {
     final regularFont = pw.Font.ttf(
@@ -114,15 +106,8 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     }
   }
 
-  // ===========================================================================
-  // PDF CONTENT
-  // ===========================================================================
-
   List<pw.Widget> _buildPdfContent(InvoiceModel invoice) {
     return [
-      // -----------------------------------------------------------------------
-      // BUSINESS HEADER
-      // -----------------------------------------------------------------------
       pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
@@ -552,10 +537,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     ];
   }
 
-  // ===========================================================================
-  // PDF HELPERS
-  // ===========================================================================
-
   pw.Widget _pdfHeaderCell(String text) {
     return pw.Padding(
       padding: const pw.EdgeInsets.all(6),
@@ -592,10 +573,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
       ),
     );
   }
-
-  // ===========================================================================
-  // FORMATTERS
-  // ===========================================================================
 
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/'
@@ -652,10 +629,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     return quantity.toStringAsFixed(2);
   }
 
-  // ===========================================================================
-  // BUILD
-  // ===========================================================================
-
+  static const Color _heading = Color(0xFF24476B);
   @override
   Widget build(BuildContext context) {
     final items =
@@ -667,9 +641,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     final date = _getInvoiceDate();
 
     final subtotal = _number(widget.invoice['subtotal']);
-
     final sgst = _number(widget.invoice['sgst']);
-
     final cgst = _number(widget.invoice['cgst']);
 
     final totalGst = widget.invoice['totalGst'] != null
@@ -686,86 +658,158 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
         ? 'Pending'
         : _safeString(widget.invoice['paymentStatus']);
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
+    const backgroundColor = Color(0xFFF8FAFD);
 
-      // =========================================================================
-      // APP BAR
-      // =========================================================================
+    return Scaffold(
+      backgroundColor: backgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: backgroundColor,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        titleSpacing: context.wp(4),
-        automaticallyImplyLeading: false,
-
-        leading: InkWell(
-          onTap: () => Navigator.pop(context),
-          child: Icon(Icons.arrow_back_ios, color: AppColors.card),
-        ),
-
         title: Text(
           'Invoice Preview',
           style: AppTextStyles.titleLarge.copyWith(
-            color: AppColors.card,
-            fontWeight: FontWeight.w600,
-            fontSize: context.sp(20),
+            color: _heading,
+            fontWeight: FontWeight.w800,
+            fontSize: context.sp(21),
           ),
+        ),
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _heading),
         ),
       ),
+      body: SizedBox.expand(
+        child: Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            // Base background.
+            const Positioned.fill(child: ColoredBox(color: backgroundColor)),
 
-      // =========================================================================
-      // BODY
-      // =========================================================================
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF4F8CFF),
-              Color(0xFF8FB7FF),
-              Color(0xFFEAF2FF),
-              Color(0xFFF7F8FC),
-            ],
-            stops: [0.0, 0.18, 0.42, 0.75],
-          ),
-        ),
-
-        child: SafeArea(
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(
-              context.wp(4),
-              context.hp(2),
-              context.wp(4),
-              context.hp(4),
-            ),
-            child: Column(
-              children: [
-                _buildInvoicePaper(
-                  context,
-                  items: items,
-                  date: date,
-                  subtotal: subtotal,
-                  sgst: sgst,
-                  cgst: cgst,
-                  totalGst: totalGst,
-                  roundOff: roundOff,
-                  total: total,
-                  paymentStatus: paymentStatus,
+            Positioned(
+              top: context.hp(7),
+              right: -context.wp(32),
+              child: IgnorePointer(
+                child: Container(
+                  width: context.wp(82),
+                  height: context.wp(82),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      center: const Alignment(-0.2, -0.2),
+                      radius: 0.75,
+                      colors: [
+                        const Color(0xFFB9D9FF).withValues(alpha: 0.32),
+                        const Color(0xFFD5E7FF).withValues(alpha: 0.19),
+                        const Color(0xFFEAF3FF).withValues(alpha: 0.07),
+                        backgroundColor.withValues(alpha: 0),
+                      ],
+                      stops: const [0.0, 0.42, 0.72, 1.0],
+                    ),
+                  ),
                 ),
-
-                SizedBox(height: context.hp(2.5)),
-
-                _buildActionButtons(context),
-              ],
+              ),
             ),
-          ),
+
+            // Partial circle overlapping the upper glow.
+            Positioned(
+              top: context.hp(22),
+              right: -context.wp(23),
+              child: IgnorePointer(
+                child: Container(
+                  width: context.wp(47),
+                  height: context.wp(47),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFF9FCBFF).withValues(alpha: 0.13),
+                      width: 1.2,
+                    ),
+                    gradient: RadialGradient(
+                      colors: [
+                        const Color(0xFFBBD9FF).withValues(alpha: 0.13),
+                        const Color(0xFFBBD9FF).withValues(alpha: 0.035),
+                        backgroundColor.withValues(alpha: 0),
+                      ],
+                      stops: const [0.0, 0.68, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Larger glossy glow near the lower-right corner.
+            Positioned(
+              bottom: context.hp(5),
+              right: -context.wp(36),
+              child: IgnorePointer(
+                child: Container(
+                  width: context.wp(88),
+                  height: context.wp(88),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      center: const Alignment(-0.2, -0.25),
+                      radius: 0.8,
+                      colors: [
+                        const Color(0xFFC8E1FF).withValues(alpha: 0.29),
+                        const Color(0xFFDCEBFF).withValues(alpha: 0.17),
+                        const Color(0xFFEAF3FF).withValues(alpha: 0.06),
+                        backgroundColor.withValues(alpha: 0),
+                      ],
+                      stops: const [0.0, 0.42, 0.73, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Subtle outlined semi-circle at the bottom-right.
+            Positioned(
+              bottom: -context.wp(27),
+              right: -context.wp(19),
+              child: IgnorePointer(
+                child: Container(
+                  width: context.wp(64),
+                  height: context.wp(64),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFF9FCBFF).withValues(alpha: 0.17),
+                      width: 1.4,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Invoice content stays above the decorative background.
+            SafeArea(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: EdgeInsets.all(context.wp(1)),
+                child: Column(
+                  children: [
+                    _buildInvoicePaper(
+                      context,
+                      items: items,
+                      date: date,
+                      subtotal: subtotal,
+                      sgst: sgst,
+                      cgst: cgst,
+                      totalGst: totalGst,
+                      roundOff: roundOff,
+                      total: total,
+                      paymentStatus: paymentStatus,
+                    ),
+                    SizedBox(height: context.hp(2.5)),
+                    _buildActionButtons(context),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -787,10 +831,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     return DateTime.now();
   }
 
-  // ===========================================================================
-  // INVOICE PAPER
-  // ===========================================================================
-
   Widget _buildInvoicePaper(
     BuildContext context, {
     required List<Map<String, dynamic>> items,
@@ -807,43 +847,28 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE4E7EC)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.055),
-            blurRadius: 28,
-            offset: const Offset(0, 10),
+            color: Colors.black.withValues(alpha: 0.045),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
-
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         child: Column(
           children: [
-            Container(
-              height: 5,
-              width: double.infinity,
-              color: AppColors.primary,
-            ),
-
             _buildBusinessHeader(context),
-
             _divider(),
-
             _buildInvoiceHeader(context, date: date),
-
             _divider(),
-
             _buildPartyAndInvoiceDetails(context),
-
             _divider(),
-
             _buildItemsSection(context, items),
-
             _divider(),
-
             _buildTotalsAndBankSection(
               context,
               subtotal: subtotal,
@@ -853,23 +878,15 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
               roundOff: roundOff,
               total: total,
             ),
-
             _divider(),
-
             _buildPaymentStatus(context, paymentStatus),
-
             _divider(),
-
             _buildSignatureSection(context),
           ],
         ),
       ),
     );
   }
-
-  // ===========================================================================
-  // BUSINESS HEADER
-  // ===========================================================================
 
   Widget _buildBusinessHeader(BuildContext context) {
     final sellerName = _safeString(widget.invoice['sellerName']);
@@ -881,7 +898,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     final sellerEmail = _safeString(widget.invoice['sellerEmail']);
 
     return Padding(
-      padding: EdgeInsets.all(context.wp(5)),
+      padding: EdgeInsets.all(context.wp(3.5)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -967,139 +984,74 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     );
   }
 
-  // ===========================================================================
-  // INVOICE HEADER
-  // ===========================================================================
-
   Widget _buildInvoiceHeader(BuildContext context, {required DateTime date}) {
     final invoiceNumber = _safeString(widget.invoice['invoiceNumber']);
-
     final financialYear = _safeString(widget.invoice['financialYear']);
 
     return Padding(
-      padding: EdgeInsets.all(context.wp(5)),
+      padding: EdgeInsets.symmetric(
+        horizontal: context.wp(3),
+        vertical: context.hp(1),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          Container(
+            width: context.wp(10),
+            height: context.wp(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF3FF),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              Icons.receipt_long_rounded,
+              color: _heading,
+              size: context.wp(5),
+            ),
+          ),
+          SizedBox(width: context.wp(2.5)),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'TAX INVOICE',
-                  style: AppTextStyles.headlineLarge.copyWith(
-                    color: const Color(0xFF101828),
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.4,
+                  invoiceNumber.isEmpty ? 'Invoice' : invoiceNumber,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.titleMedium.copyWith(
+                    fontSize: context.sp(13),
+                    fontWeight: FontWeight.w800,
+                    color: _heading,
                   ),
                 ),
-
-                SizedBox(height: context.hp(0.4)),
-
+                SizedBox(height: context.hp(0.3)),
                 Text(
-                  'Original for recipient',
+                  'Date: ${_formatDate(date)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: AppTextStyles.bodySmall.copyWith(
-                    color: const Color(0xFF98A2B3),
+                    fontSize: context.sp(10),
+                    color: const Color(0xFF667085),
                   ),
                 ),
+                if (financialYear.isNotEmpty)
+                  Text(
+                    'FY: $financialYear',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      fontSize: context.sp(10),
+                      color: const Color(0xFF667085),
+                    ),
+                  ),
               ],
             ),
           ),
-
-          SizedBox(width: context.wp(3)),
-
-          Flexible(
-            child: _buildInvoiceMeta(
-              context,
-              invoiceNumber: invoiceNumber,
-              date: _formatDate(date),
-              financialYear: financialYear,
-            ),
-          ),
         ],
       ),
     );
   }
-
-  Widget _buildInvoiceMeta(
-    BuildContext context, {
-    required String invoiceNumber,
-    required String date,
-    required String financialYear,
-  }) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: context.wp(3),
-        vertical: context.hp(1.2),
-      ),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FB),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE4E7EC)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            'INVOICE NO.',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: const Color(0xFF98A2B3),
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.4,
-            ),
-          ),
-
-          SizedBox(height: context.hp(0.3)),
-
-          Text(
-            invoiceNumber.isEmpty ? '-' : invoiceNumber,
-            style: AppTextStyles.titleMedium.copyWith(
-              color: const Color(0xFF101828),
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-
-          SizedBox(height: context.hp(0.8)),
-
-          _metaRow('Date', date),
-
-          if (financialYear.isNotEmpty) _metaRow('FY', financialYear),
-        ],
-      ),
-    );
-  }
-
-  Widget _metaRow(String title, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '$title: ',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: const Color(0xFF98A2B3),
-            ),
-          ),
-
-          Flexible(
-            child: Text(
-              value,
-              overflow: TextOverflow.ellipsis,
-              style: AppTextStyles.bodySmall.copyWith(
-                color: const Color(0xFF475467),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ===========================================================================
-  // PARTY DETAILS
-  // ===========================================================================
 
   Widget _buildPartyAndInvoiceDetails(BuildContext context) {
     return Padding(
@@ -1245,29 +1197,29 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(width: 125, child: SizedBox()),
-
           SizedBox(
-            width: 125,
+            width: 105,
             child: Text(
               title,
               style: AppTextStyles.bodySmall.copyWith(
                 color: const Color(0xFF667085),
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
+                fontSize: 11,
               ),
             ),
           ),
-
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               value,
               style: AppTextStyles.bodySmall.copyWith(
                 color: const Color(0xFF344054),
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w600,
+                fontSize: 11,
               ),
             ),
           ),
@@ -1275,10 +1227,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
       ),
     );
   }
-
-  // ===========================================================================
-  // ITEMS
-  // ===========================================================================
 
   Widget _buildItemsSection(
     BuildContext context,
@@ -1502,10 +1450,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
       ),
     );
   }
-
-  // ===========================================================================
-  // TOTALS + BANK
-  // ===========================================================================
 
   Widget _buildTotalsAndBankSection(
     BuildContext context, {
@@ -1741,10 +1685,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     );
   }
 
-  // ===========================================================================
-  // PAYMENT STATUS
-  // ===========================================================================
-
   Widget _buildPaymentStatus(BuildContext context, String status) {
     final isPaid = status.toLowerCase() == 'paid';
 
@@ -1834,10 +1774,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     );
   }
 
-  // ===========================================================================
-  // SIGNATURE
-  // ===========================================================================
-
   Widget _buildSignatureSection(BuildContext context) {
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -1878,10 +1814,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
       ),
     );
   }
-
-  // ===========================================================================
-  // ACTION BUTTONS
-  // ===========================================================================
 
   Widget _buildActionButtons(BuildContext context) {
     return Consumer<InvoiceProvider>(
@@ -1962,10 +1894,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     );
   }
 
-  // ===========================================================================
-  // BLUETOOTH PERMISSIONS
-  // ===========================================================================
-
   Future<bool> _requestBluetoothPermissions() async {
     if (!Platform.isAndroid) {
       return true;
@@ -2026,10 +1954,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
 
     return true;
   }
-
-  // ===========================================================================
-  // ANDROID BLUETOOTH ENABLE REQUEST
-  // ===========================================================================
 
   Future<bool> _requestEnableBluetooth() async {
     if (!Platform.isAndroid) {
@@ -2113,10 +2037,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     return result ?? false;
   }
 
-  // ===========================================================================
-  // BLUETOOTH PRINT FLOW
-  // ===========================================================================
-
   Future<void> _printViaBluetooth() async {
     final provider = context.read<InvoiceProvider>();
 
@@ -2125,10 +2045,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     }
 
     try {
-      // -----------------------------------------------------------------------
-      // 1. SAVE INVOICE
-      // -----------------------------------------------------------------------
-
       final invoiceModel = InvoiceModel.fromPreviewMap(widget.invoice);
 
       final savedInvoice = await provider.createInvoice(invoiceModel);
@@ -2146,19 +2062,11 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
         return;
       }
 
-      // -----------------------------------------------------------------------
-      // 2. CHECK BLUETOOTH
-      // -----------------------------------------------------------------------
-
       final bluetoothReady = await _ensureBluetoothReady();
 
       if (!bluetoothReady || !mounted) {
         return;
       }
-
-      // -----------------------------------------------------------------------
-      // 3. GET PAIRED BLUETOOTH PRINTERS
-      // -----------------------------------------------------------------------
 
       _showSnackBar(
         'Searching for paired Bluetooth printers...',
@@ -2176,25 +2084,11 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
         return;
       }
 
-      // -----------------------------------------------------------------------
-      // 4. SELECT PRINTER
-      // -----------------------------------------------------------------------
-
       final selectedPrinter = await _showBluetoothPrinterSelection(devices);
 
       if (!mounted || selectedPrinter == null) {
         return;
       }
-
-      // -----------------------------------------------------------------------
-      // 5. IMPORTANT
-      //
-      // print_bluetooth_thermal only supports ESC/POS thermal printing.
-      // It cannot receive an A4 PDF.
-      //
-      // Therefore we do NOT pretend to send the A4 PDF through this package.
-      // We open Android's native A4 print framework instead.
-      // -----------------------------------------------------------------------
 
       _showSnackBar(
         '${selectedPrinter.name.isEmpty ? 'Printer' : selectedPrinter.name} selected.',
@@ -2212,10 +2106,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
       _showSnackBar('Unable to find Bluetooth printers.', isError: true);
     }
   }
-
-  // ===========================================================================
-  // PRINTER SELECTION
-  // ===========================================================================
 
   Future<BluetoothInfo?> _showBluetoothPrinterSelection(
     List<BluetoothInfo> devices,
@@ -2421,10 +2311,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     );
   }
 
-  // ===========================================================================
-  // NO BLUETOOTH PRINTERS
-  // ===========================================================================
-
   Future<void> _showNoBluetoothPrintersDialog() async {
     await showDialog<void>(
       context: context,
@@ -2450,10 +2336,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     );
   }
 
-  // ===========================================================================
-  // A4 PRINT
-  // ===========================================================================
-
   Future<void> _printA4Pdf(InvoiceModel invoice) async {
     try {
       final pdfBytes = await _generateInvoicePdf(invoice);
@@ -2477,128 +2359,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
       _showSnackBar('Unable to open A4 print dialog.', isError: true);
     }
   }
-
-  // ===========================================================================
-  // CANON MESSAGE
-  // ===========================================================================
-
-  void _showCanonWirelessMessage() {
-    if (!mounted) {
-      return;
-    }
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) {
-        return Container(
-          padding: EdgeInsets.fromLTRB(
-            context.wp(5),
-            context.hp(2.5),
-            context.wp(5),
-            context.hp(3),
-          ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: context.wp(12),
-                height: 5,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD0D5DD),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-
-              SizedBox(height: context.hp(2.5)),
-
-              Container(
-                width: context.wp(16),
-                height: context.wp(16),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.10),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.print_outlined,
-                  color: AppColors.primary,
-                  size: context.wp(8),
-                ),
-              ),
-
-              SizedBox(height: context.hp(1.8)),
-
-              Text(
-                'Canon G3010',
-                style: AppTextStyles.titleLarge.copyWith(
-                  color: const Color(0xFF101828),
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-
-              SizedBox(height: context.hp(0.7)),
-
-              Text(
-                'This printer does not use Bluetooth.',
-                textAlign: TextAlign.center,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: const Color(0xFF667085),
-                  height: 1.5,
-                ),
-              ),
-
-              SizedBox(height: context.hp(0.8)),
-
-              Text(
-                'Connect your phone to the Canon G3010 through Wi-Fi / Wireless Direct and use Print Invoice.',
-                textAlign: TextAlign.center,
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: const Color(0xFF98A2B3),
-                  height: 1.5,
-                ),
-              ),
-
-              SizedBox(height: context.hp(2.2)),
-
-              SizedBox(
-                width: double.infinity,
-                height: context.hp(6),
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  icon: Icon(Icons.print_outlined, size: context.wp(5)),
-                  label: Text(
-                    'Use Print Invoice',
-                    style: AppTextStyles.button.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // ===========================================================================
-  // UI HELPERS
-  // ===========================================================================
 
   Widget _sectionTitle(
     BuildContext context, {
@@ -2673,10 +2433,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     return const Divider(height: 1, thickness: 1, color: Color(0xFFE4E7EC));
   }
 
-  // ===========================================================================
-  // CONDITIONS
-  // ===========================================================================
-
   bool _hasBusinessDetails() {
     return _safeString(widget.invoice['sellerGstin']).isNotEmpty ||
         _safeString(widget.invoice['sellerLicense']).isNotEmpty ||
@@ -2698,10 +2454,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
         invoice.accountNumber.isNotEmpty ||
         invoice.ifscCode.isNotEmpty;
   }
-
-  // ===========================================================================
-  // SNACKBAR
-  // ===========================================================================
 
   void _showSnackBar(String message, {required bool isError}) {
     if (!mounted) {

@@ -212,332 +212,302 @@ class _InvoiceHistoryScreenState extends State<InvoiceHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    const navy = Color(0xFF101D43);
+    const pageBackground = Color(0xFFF5F8FD);
+
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
+      backgroundColor: pageBackground,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        automaticallyImplyLeading: false,
+
+        backgroundColor: pageBackground,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        titleSpacing: context.wp(4),
-        automaticallyImplyLeading: false,
-        leading: InkWell(
-          onTap: () => Navigator.pop(context),
-          child: Icon(Icons.arrow_back_ios, color: AppColors.card),
-        ),
         title: Text(
           'Invoice History',
           style: AppTextStyles.titleLarge.copyWith(
-            color: AppColors.card,
-            fontWeight: FontWeight.w600,
+            color: navy,
+            fontWeight: FontWeight.w800,
             fontSize: context.sp(20),
+          ),
+        ),
+        leading: Padding(
+          padding: EdgeInsets.only(left: context.wp(4)),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () => Navigator.pop(context),
+            child: const Icon(Icons.arrow_back_ios, color: navy),
           ),
         ),
       ),
       body: Container(
-        width: double.infinity,
-        height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF4F8CFF),
-              Color(0xFF8FB7FF),
-              Color(0xFFEAF2FF),
-              Color(0xFFF7F8FC),
-            ],
-            stops: [0.0, 0.18, 0.42, 0.75],
+            colors: [Color(0xFFEAF4FF), pageBackground, Color(0xFFF8FAFE)],
+            stops: [0, 0.25, 1],
           ),
         ),
         child: SafeArea(
+          top: false,
           bottom: false,
           child: Consumer<InvoiceProvider>(
             builder: (context, provider, child) {
               final apiInvoices = _filterApiInvoices(provider.invoiceHistory);
-
               final localInvoices = _filterLocalInvoices(provider.invoices);
-
-              final bool isLoading = _isOnline
+              final isLoading = _isOnline
                   ? provider.isHistoryLoading
                   : provider.isLoading;
-
               final invoicesCount = _isOnline
                   ? apiInvoices.length
                   : localInvoices.length;
+              final totalAmount = _isOnline
+                  ? apiInvoices.fold<double>(
+                      0,
+                      (sum, invoice) => sum + invoice.totalAmount,
+                    )
+                  : localInvoices.fold<double>(
+                      0,
+                      (sum, invoice) => sum + invoice.totalAmount,
+                    );
 
               return Column(
                 children: [
-                  SizedBox(height: context.hp(1)),
-
                   Padding(
-                    padding: EdgeInsets.symmetric(horizontal: context.wp(4)),
+                    padding: EdgeInsets.fromLTRB(
+                      context.wp(4),
+                      context.hp(1),
+                      context.wp(4),
+                      0,
+                    ),
                     child: _HistoryTabs(
                       isOnline: _isOnline,
                       onChanged: _changeTab,
                     ),
                   ),
-
-                  SizedBox(height: context.hp(1.8)),
-
-                  // ==========================================================
-                  // CONTENT
-                  // ==========================================================
-                  Expanded(
-                    child: Container(
-                      width: double.infinity,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFF7F8FC),
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(28),
-                        ),
+                  SizedBox(height: context.hp(1.5)),
+                  if (_isOnline)
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: context.wp(4)),
+                      child: _OnlineHeader(
+                        fromDate: _fromDate,
+                        toDate: _toDate,
+                        onFilterTap: _selectDateRange,
+                        onClear: _clearFilter,
                       ),
+                    )
+                  else
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: context.wp(4)),
                       child: Column(
                         children: [
-                          // ==================================================
-                          // ONLINE CONTENT
-                          // ==================================================
-                          if (_isOnline)
-                            Padding(
-                              padding: EdgeInsets.fromLTRB(
-                                context.wp(4),
-                                context.hp(2),
-                                context.wp(4),
-                                context.hp(1),
-                              ),
-                              child: _OnlineHeader(
-                                fromDate: _fromDate,
-                                toDate: _toDate,
-                                onFilterTap: _selectDateRange,
-                                onClear: _clearFilter,
-                              ),
-                            ),
-
-                          // ==================================================
-                          // OFFLINE CONTENT
-                          // ==================================================
-                          if (!_isOnline)
-                            Padding(
-                              padding: EdgeInsets.fromLTRB(
-                                context.wp(4),
-                                context.hp(2),
-                                context.wp(4),
-                                context.hp(1),
-                              ),
-                              child: Column(
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          'Offline Invoices',
-                                          style: AppTextStyles.titleMedium
-                                              .copyWith(
-                                                fontWeight: FontWeight.w800,
-                                                fontSize: context.sp(16),
-                                              ),
-                                        ),
-                                      ),
-                                      Text(
-                                        '$invoicesCount Invoices',
-                                        style: AppTextStyles.bodySmall.copyWith(
-                                          color: Colors.orange.shade800,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: context.sp(10),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-
-                                  SizedBox(height: context.hp(1.2)),
-
-                                  SizedBox(
-                                    width: double.infinity,
-                                    height: context.hp(6),
-                                    child: ElevatedButton.icon(
-                                      onPressed:
-                                          provider.isSyncing ||
-                                              localInvoices.isEmpty
-                                          ? null
-                                          : _syncAllInvoices,
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppColors.primary,
-                                        disabledBackgroundColor:
-                                            AppColors.grey300,
-                                        foregroundColor: Colors.white,
-                                        disabledForegroundColor:
-                                            Colors.grey.shade600,
-                                        elevation: 0,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            14,
-                                          ),
-                                        ),
-                                      ),
-                                      icon: provider.isSyncing
-                                          ? SizedBox(
-                                              width: context.wp(4.5),
-                                              height: context.wp(4.5),
-                                              child:
-                                                  const CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                    color: Colors.white,
-                                                  ),
-                                            )
-                                          : const Icon(
-                                              Icons.cloud_upload_rounded,
-                                            ),
-                                      label: Text(
-                                        provider.isSyncing
-                                            ? 'Syncing Invoices...'
-                                            : 'Sync All',
-                                        style: AppTextStyles.labelLarge
-                                            .copyWith(
-                                              color:
-                                                  provider.isSyncing ||
-                                                      localInvoices.isEmpty
-                                                  ? Colors.grey.shade600
-                                                  : Colors.white,
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: context.sp(11),
-                                            ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                          // ==================================================
-                          // COUNT
-                          // ==================================================
-                          Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: context.wp(4),
-                            ),
-                            child: Row(
-                              children: [
-                                Text(
-                                  '$invoicesCount Invoices',
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Offline Invoices',
                                   style: AppTextStyles.titleMedium.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: context.sp(14),
+                                    color: navy,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: context.sp(16),
                                   ),
                                 ),
-                                const Spacer(),
-                                if (_fromDate != null && _toDate != null)
-                                  Text(
-                                    'Filtered',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: context.sp(10),
-                                    ),
-                                  ),
-                              ],
-                            ),
+                              ),
+                              Text(
+                                '$invoicesCount invoices',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: const Color(0xFFB77908),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: context.sp(10),
+                                ),
+                              ),
+                            ],
                           ),
-
                           SizedBox(height: context.hp(1)),
-
-                          // ==================================================
-                          // LIST
-                          // ==================================================
-                          Expanded(
-                            child: RefreshIndicator(
-                              color: AppColors.primary,
-                              onRefresh: _isOnline
-                                  ? _refreshOnline
-                                  : _refreshOffline,
-                              child:
-                                  isLoading &&
-                                      (_isOnline
-                                          ? provider.invoiceHistory.isEmpty
-                                          : provider.invoices.isEmpty)
-                                  ? ListView(
-                                      physics:
-                                          const AlwaysScrollableScrollPhysics(),
-                                      children: [
-                                        SizedBox(
-                                          height: context.hp(35),
-                                          child: const Center(
-                                            child: CircularProgressIndicator(),
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  : _isOnline
-                                  ? apiInvoices.isEmpty
-                                        ? ListView(
-                                            physics:
-                                                const AlwaysScrollableScrollPhysics(),
-                                            children: [
-                                              SizedBox(
-                                                height: context.hp(35),
-                                                child: const _EmptyInvoiceState(
-                                                  message:
-                                                      'No online invoices found.',
-                                                ),
-                                              ),
-                                            ],
-                                          )
-                                        : ListView.separated(
-                                            physics:
-                                                const AlwaysScrollableScrollPhysics(),
-                                            padding: EdgeInsets.fromLTRB(
-                                              context.wp(4),
-                                              0,
-                                              context.wp(4),
-                                              context.hp(3),
-                                            ),
-                                            itemCount: apiInvoices.length,
-                                            separatorBuilder: (_, _) =>
-                                                SizedBox(
-                                                  height: context.hp(1.2),
-                                                ),
-                                            itemBuilder: (context, index) {
-                                              return _InvoiceHistoryCard(
-                                                invoice: apiInvoices[index],
-                                              );
-                                            },
-                                          )
-                                  : localInvoices.isEmpty
-                                  ? ListView(
-                                      physics:
-                                          const AlwaysScrollableScrollPhysics(),
-                                      children: [
-                                        SizedBox(
-                                          height: context.hp(35),
-                                          child: const _EmptyInvoiceState(
-                                            message:
-                                                'No offline invoices found.',
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  : ListView.separated(
-                                      physics:
-                                          const AlwaysScrollableScrollPhysics(),
-                                      padding: EdgeInsets.fromLTRB(
-                                        context.wp(4),
-                                        0,
-                                        context.wp(4),
-                                        context.hp(3),
+                          SizedBox(
+                            width: double.infinity,
+                            height: context.hp(5.5),
+                            child: ElevatedButton.icon(
+                              onPressed:
+                                  provider.isSyncing || localInvoices.isEmpty
+                                  ? null
+                                  : _syncAllInvoices,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                disabledBackgroundColor: const Color(
+                                  0xFFE2E8F0,
+                                ),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              icon: provider.isSyncing
+                                  ? SizedBox(
+                                      width: context.wp(4),
+                                      height: context.wp(4),
+                                      child: const CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
                                       ),
-                                      itemCount: localInvoices.length,
-                                      separatorBuilder: (_, _) =>
-                                          SizedBox(height: context.hp(1.2)),
-                                      itemBuilder: (context, index) {
-                                        return _LocalInvoiceHistoryCard(
-                                          invoice: localInvoices[index],
-                                        );
-                                      },
-                                    ),
+                                    )
+                                  : const Icon(Icons.cloud_upload_rounded),
+                              label: Text(
+                                provider.isSyncing
+                                    ? 'Syncing invoices…'
+                                    : 'Sync all pending invoices',
+                                style: AppTextStyles.labelLarge.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: context.sp(11),
+                                ),
+                              ),
                             ),
                           ),
                         ],
                       ),
+                    ),
+                  SizedBox(height: context.hp(1.6)),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: context.wp(4)),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _HistorySummaryCard(
+                            icon: Icons.receipt_long_rounded,
+                            label: 'Total Invoices',
+                            value: '$invoicesCount',
+                          ),
+                        ),
+                        SizedBox(width: context.wp(2.5)),
+                        Expanded(
+                          child: _HistorySummaryCard(
+                            icon: Icons.bar_chart_rounded,
+                            label: 'Total Amount',
+                            value: _formatHistoryAmount(totalAmount),
+                            amount: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: context.hp(2)),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: context.wp(4)),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '$invoicesCount Invoices',
+                            style: AppTextStyles.titleLarge.copyWith(
+                              color: navy,
+                              fontWeight: FontWeight.w800,
+                              fontSize: context.sp(18),
+                            ),
+                          ),
+                        ),
+                        if (_fromDate != null && _toDate != null)
+                          TextButton.icon(
+                            onPressed: _clearFilter,
+                            icon: const Icon(Icons.close_rounded, size: 16),
+                            label: const Text('Clear filter'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppColors.primary,
+                              padding: EdgeInsets.zero,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: context.hp(0.8)),
+                  Expanded(
+                    child: RefreshIndicator(
+                      color: AppColors.primary,
+                      onRefresh: _isOnline ? _refreshOnline : _refreshOffline,
+                      child:
+                          isLoading &&
+                              (_isOnline
+                                  ? provider.invoiceHistory.isEmpty
+                                  : provider.invoices.isEmpty)
+                          ? ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                SizedBox(
+                                  height: context.hp(30),
+                                  child: const Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                ),
+                              ],
+                            )
+                          : _isOnline
+                          ? apiInvoices.isEmpty
+                                ? ListView(
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: context.wp(4),
+                                    ),
+                                    children: [
+                                      SizedBox(
+                                        height: context.hp(28),
+                                        child: const _EmptyInvoiceState(
+                                          message: 'No online invoices found.',
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : ListView.separated(
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
+                                    padding: EdgeInsets.fromLTRB(
+                                      context.wp(4),
+                                      0,
+                                      context.wp(4),
+                                      context.hp(3),
+                                    ),
+                                    itemCount: apiInvoices.length,
+                                    separatorBuilder: (_, __) =>
+                                        SizedBox(height: context.hp(1.2)),
+                                    itemBuilder: (context, index) =>
+                                        _InvoiceHistoryCard(
+                                          invoice: apiInvoices[index],
+                                        ),
+                                  )
+                          : localInvoices.isEmpty
+                          ? ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: EdgeInsets.symmetric(
+                                horizontal: context.wp(4),
+                              ),
+                              children: [
+                                SizedBox(
+                                  height: context.hp(28),
+                                  child: const _EmptyInvoiceState(
+                                    message: 'No offline invoices found.',
+                                  ),
+                                ),
+                              ],
+                            )
+                          : ListView.separated(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: EdgeInsets.fromLTRB(
+                                context.wp(4),
+                                0,
+                                context.wp(4),
+                                context.hp(3),
+                              ),
+                              itemCount: localInvoices.length,
+                              separatorBuilder: (_, __) =>
+                                  SizedBox(height: context.hp(1.2)),
+                              itemBuilder: (context, index) =>
+                                  _LocalInvoiceHistoryCard(
+                                    invoice: localInvoices[index],
+                                  ),
+                            ),
                     ),
                   ),
                 ],
@@ -548,6 +518,20 @@ class _InvoiceHistoryScreenState extends State<InvoiceHistoryScreen> {
       ),
     );
   }
+
+  String _formatHistoryAmount(double amount) {
+    final rounded = amount.toStringAsFixed(0);
+    final digits = rounded.split('');
+    final reversed = digits.reversed.toList();
+    final formatted = StringBuffer();
+    for (var i = 0; i < reversed.length; i++) {
+      if (i == 3 || (i > 3 && (i - 1) % 2 == 0)) {
+        formatted.write(',');
+      }
+      formatted.write(reversed[i]);
+    }
+    return '₹${formatted.toString().split('').reversed.join()}';
+  }
 }
 
 // ============================================================================
@@ -557,6 +541,87 @@ class _InvoiceHistoryScreenState extends State<InvoiceHistoryScreen> {
 // ============================================================================
 // ONLINE / OFFLINE TABS
 // ============================================================================
+
+class _HistorySummaryCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool amount;
+
+  const _HistorySummaryCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.amount = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const navy = Color(0xFF101D43);
+    return Container(
+      constraints: BoxConstraints(minHeight: context.hp(12)),
+      padding: EdgeInsets.all(context.wp(3)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFF0F4FA)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x080B2550),
+            blurRadius: 18,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: context.wp(11),
+            height: context.wp(11),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF3FF),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Icon(icon, color: AppColors.primary, size: context.sp(21)),
+          ),
+          SizedBox(width: context.wp(2.5)),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: const Color(0xFF6F7B91),
+                    fontSize: context.sp(9.5),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                SizedBox(height: context.hp(0.4)),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    style: AppTextStyles.titleMedium.copyWith(
+                      color: amount ? AppColors.primary : navy,
+                      fontSize: context.sp(amount ? 15 : 19),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _HistoryTabs extends StatelessWidget {
   final bool isOnline;
@@ -630,7 +695,7 @@ class _TabItem extends StatelessWidget {
             vertical: context.hp(1.15),
           ),
           decoration: BoxDecoration(
-            color: selected ? Colors.black : Colors.transparent,
+            color: selected ? Colors.black : Colors.grey.shade300,
             borderRadius: BorderRadius.circular(15),
             boxShadow: selected
                 ? [
@@ -650,7 +715,7 @@ class _TabItem extends StatelessWidget {
                 size: context.sp(16),
                 color: selected
                     ? Colors.white
-                    : Colors.white.withValues(alpha: 0.88),
+                    : Colors.black.withValues(alpha: 0.88),
               ),
               SizedBox(width: context.wp(2)),
               Text(
@@ -658,7 +723,7 @@ class _TabItem extends StatelessWidget {
                 style: AppTextStyles.labelLarge.copyWith(
                   color: selected
                       ? Colors.white
-                      : Colors.white.withValues(alpha: 0.92),
+                      : Colors.black.withValues(alpha: 0.92),
                   fontWeight: FontWeight.w800,
                   fontSize: context.sp(11.5),
                 ),
@@ -713,9 +778,10 @@ class _OnlineHeader extends StatelessWidget {
               side: BorderSide(
                 color: AppColors.primary.withValues(alpha: 0.22),
               ),
-              backgroundColor: Colors.white,
+              backgroundColor: Colors.white.withValues(alpha: 0.78),
+              // side: const BorderSide(color: Color(0xFFD7E6F8)),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(16),
               ),
             ),
             icon: const Icon(Icons.calendar_month_outlined),
@@ -800,11 +866,19 @@ class _InvoiceHistoryCard extends StatelessWidget {
     final isPaid = status.toLowerCase() == 'paid';
 
     return Card(
+      color: Colors.white,
+      elevation: 1.5,
+      shadowColor: const Color(0x120B2550),
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(22),
+        side: const BorderSide(color: Color(0xFFF0F4FA)),
+      ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(22),
         onTap: () {},
         child: Padding(
-          padding: EdgeInsets.all(context.wp(4)),
+          padding: EdgeInsets.all(context.wp(3.5)),
           child: Column(
             children: [
               Row(
@@ -943,11 +1017,19 @@ class _LocalInvoiceHistoryCard extends StatelessWidget {
     final date = DateTime.tryParse(invoice.invoiceDate);
 
     return Card(
+      color: Colors.white,
+      elevation: 1.5,
+      shadowColor: const Color(0x120B2550),
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(22),
+        side: const BorderSide(color: Color(0xFFF0F4FA)),
+      ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(22),
         onTap: () {},
         child: Padding(
-          padding: EdgeInsets.all(context.wp(4)),
+          padding: EdgeInsets.all(context.wp(3.5)),
           child: Column(
             children: [
               Row(
